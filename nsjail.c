@@ -97,6 +97,9 @@ static bool nsjailSetSigHandlers(void)
 static bool nsjailSetTimer(struct nsjconf_t *nsjconf)
 {
 	if (nsjconf->mode == MODE_STANDALONE_EXECVE) {
+		if (nsjconf->tlimit) {
+			LOG_W("Time limit does not work on [MODE_STANDALONE_EXECVE] for now, ignoring");
+		}
 		return true;
 	}
 
