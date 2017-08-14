@@ -97,7 +97,7 @@ static bool nsjailSetSigHandlers(void)
 static bool nsjailSetTimer(struct nsjconf_t *nsjconf)
 {
 	// only used in MODE_LISTEN_TCP mode
-	if(nsjconf->mode != MODE_LISTEN_TCP) {
+	if (nsjconf->mode != MODE_LISTEN_TCP) {
 		LOG_E("Periodical timer should be armed only on [MODE_LISTEN_TCP].");
 		exit(1);
 	};
@@ -116,7 +116,8 @@ static bool nsjailSetTimerOneShot(struct nsjconf_t *nsjconf)
 {
 	if (nsjconf->mode == MODE_STANDALONE_EXECVE) {
 		if (nsjconf->tlimit) {
-			LOG_W("Time limit does not work on [MODE_STANDALONE_EXECVE] for now, ignoring");
+			LOG_W
+			    ("Time limit does not work on [MODE_STANDALONE_EXECVE] for now, ignoring");
 		}
 		return true;
 	}
