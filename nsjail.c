@@ -96,16 +96,34 @@ static bool nsjailSetSigHandlers(void)
 
 static bool nsjailSetTimer(struct nsjconf_t *nsjconf)
 {
+	// only used in MODE_LISTEN_TCP mode
+	if(nsjconf->mode != MODE_LISTEN_TCP) {
+		LOG_E("Periodical timer should be armed only on [MODE_LISTEN_TCP].");
+		exit(1);
+	};
+	struct itimerval it = {
+		.it_value = {.tv_sec = 1,.tv_usec = 0},
+		.it_interval = {.tv_sec = 1,.tv_usec = 0},
+	};
+	if (setitimer(ITIMER_REAL, &it, NULL) == -1) {
+		PLOG_E("setitimer(ITIMER_REAL)");
+		return false;
+	}
+	return true;
+}
+
+static bool nsjailSetTimerOneShot(struct nsjconf_t *nsjconf)
+{
 	if (nsjconf->mode == MODE_STANDALONE_EXECVE) {
 		if (nsjconf->tlimit) {
 			LOG_W("Time limit does not work on [MODE_STANDALONE_EXECVE] for now, ignoring");
 		}
 		return true;
 	}
-
+	// FIXME: consider moving to timespec for fractional time
 	struct itimerval it = {
-		.it_value = {.tv_sec = 1,.tv_usec = 0},
-		.it_interval = {.tv_sec = 1,.tv_usec = 0},
+		.it_value = {.tv_sec = nsjconf->tlimit,.tv_usec = 0},
+		.it_interval = {},
 	};
 	if (setitimer(ITIMER_REAL, &it, NULL) == -1) {
 		PLOG_E("setitimer(ITIMER_REAL)");
@@ -185,13 +203,16 @@ int main(int argc, char *argv[])
 	if (nsjailSetSigHandlers() == false) {
 		exit(1);
 	}
-	if (nsjailSetTimer(&nsjconf) == false) {
-		exit(1);
-	}
 
 	if (nsjconf.mode == MODE_LISTEN_TCP) {
+		if (nsjailSetTimer(&nsjconf) == false) {
+			exit(1);
+		}
 		nsjailListenMode(&nsjconf);
 	} else {
+		if (nsjailSetTimerOneShot(&nsjconf) == false) {
+			exit(1);
+		}
 		return nsjailStandaloneMode(&nsjconf);
 	}
 	return 0;
