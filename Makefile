@@ -15,91 +15,62 @@
 #   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
-#
+
+PKG_CONFIG=$(shell which pkg-config)
+ifeq ($(PKG_CONFIG),)
+$(error "Install pkg-config to make it work")
+endif
 
 CC ?= gcc
+CXX ?= g++
 
-EXTRA_CFLAGS := $(CFLAGS)
-
-CFLAGS += -O2 -c -std=gnu11 \
+COMMON_FLAGS += -O2 -c \
 	-D_GNU_SOURCE -D_FILE_OFFSET_BITS=64 \
-	-Wformat -Wformat=2 -Wformat-security -fPIE \
-	-Wno-format-nonliteral \
+	-fPIE \
+	-Wformat -Wformat-security -Wno-format-nonliteral \
 	-Wall -Wextra -Werror \
 	-Ikafel/include
 
-LDFLAGS += -Wl,-z,now -Wl,-z,relro -pie -Wl,-z,noexecstack -lpthread -lcap
+CXXFLAGS += $(COMMON_FLAGS) $(shell pkg-config --cflags protobuf) \
+	-std=c++11 -fno-exceptions -Wno-unused -Wno-unused-parameter
+LDFLAGS += -pie -Wl,-z,noexecstack -lpthread $(shell pkg-config --libs protobuf)
 
 BIN = nsjail
 LIBS = kafel/libkafel.a
-SRCS = nsjail.c caps.c cmdline.c config.c contain.c log.c cgroup.c mount.c net.c pid.c sandbox.c subproc.c user.c util.c uts.c cpu.c
-OBJS = $(SRCS:.c=.o)
+SRCS_CXX = caps.cc cgroup.cc cmdline.cc config.cc contain.cc cpu.cc logs.cc mnt.cc net.cc nsjail.cc pid.cc sandbox.cc subproc.cc uts.cc user.cc util.cc
+SRCS_PROTO = config.proto
+SRCS_PB_CXX = $(SRCS_PROTO:.proto=.pb.cc)
+SRCS_PB_H = $(SRCS_PROTO:.proto=.pb.h)
+SRCS_PB_O = $(SRCS_PROTO:.proto=.pb.o)
+OBJS = $(SRCS_CXX:.cc=.o) $(SRCS_PB_CXX:.cc=.o)
 
 ifdef DEBUG
-	CFLAGS += -g -ggdb -gdwarf-4
+	CXXFLAGS += -g -ggdb -gdwarf-4
 endif
 
 USE_NL3 ?= yes
 ifeq ($(USE_NL3), yes)
 NL3_EXISTS := $(shell pkg-config --exists libnl-route-3.0 && echo yes)
 ifeq ($(NL3_EXISTS), yes)
-	CFLAGS += -DNSJAIL_NL3_WITH_MACVLAN $(shell pkg-config --cflags libnl-route-3.0)
+	CXXFLAGS += -DNSJAIL_NL3_WITH_MACVLAN $(shell pkg-config --cflags libnl-route-3.0)
 	LDFLAGS += $(shell pkg-config --libs libnl-route-3.0)
 endif
 endif
 
-USE_PROTOBUF ?= yes
-ifeq ($(USE_PROTOBUF), yes)
-ifeq ("$(shell which protoc-c)", "")
-	USE_PROTOBUF := no
-	PROTOC_WARNING := yes
-endif
-endif
+.PHONY: all clean depend indent
 
-ifeq ($(USE_PROTOBUF), no)
-else ifeq ($(shell pkg-config --exists libprotobuf-c && echo yes), yes)
-	PROTO_DEPS = config.pb-c.h config.pb-c.c
-	SRCS += config.pb-c.c
-	CFLAGS += -DNSJAIL_WITH_PROTOBUF -Iprotobuf-c-text/protobuf-c-text $(shell pkg-config --cflags libprotobuf-c)
-	LIBS += protobuf-c-text/protobuf-c-text/.libs/libprotobuf-c-text.a
-	LDFLAGS += $(shell pkg-config --libs libprotobuf-c)
-else ifneq ("$(wildcard /usr/include/google/protobuf-c/protobuf-c.h)", "")
-	PROTO_DEPS = config.pb-c.h config.pb-c.c
-	SRCS += config.pb-c.c
-	CFLAGS += -DNSJAIL_WITH_PROTOBUF -Iprotobuf-c-text/protobuf-c-text -I/usr/include/google
-	LIBS += protobuf-c-text/protobuf-c-text/.libs/libprotobuf-c-text.a
-	LDFLAGS += -Wl,-lprotobuf-c
-else ifneq ("$(wildcard /usr/local/include/google/protobuf-c/protobuf-c.h)", "")
-	PROTO_DEPS = config.pb-c.h config.pb-c.c
-	SRCS += config.pb-c.c
-	CFLAGS += -DNSJAIL_WITH_PROTOBUF -Iprotobuf-c-text/protobuf-c-text -I/usr/local/include/google
-	LIBS += protobuf-c-text/protobuf-c-text/.libs/libprotobuf-c-text.a
-	LDFLAGS += -Wl,--library-path=/usr/local/lib -Wl,-lprotobuf-c
-else
-	USE_PROTOBUF := no
-endif
+.cc.o: %.cc
+	$(CXX) $(CXXFLAGS) $< -o $@
 
-.PHONY: all clear depend indent
-
-.c.o: %.c
-	$(CC) $(CFLAGS) $< -o $@
-
-all: $(PROTO_DEPS) $(BIN)
-ifeq ($(PROTOC_WARNING), yes)
-	$(info *********************************************************)
-	$(info *        'protoc-c' is missing on your system           *)
-	$(info *  Install 'protobuf-c-compiler' or a similar package   *)
-	$(info *********************************************************)
-endif
-ifeq ($(USE_PROTOBUF), no)
-	$(info *********************************************************)
-	$(info * Code compiled without libprotobuf-c/libprotobuf-c-dev *)
-	$(info *  The --config commandline option will be unavailable  *)
-	$(info *********************************************************)
-endif
+all: $(BIN)
 
 $(BIN): $(LIBS) $(OBJS)
-	$(CC) -o $(BIN) $(OBJS) $(LIBS) $(LDFLAGS)
+ifneq ($(NL3_EXISTS), yes)
+	$(warning "==========================================================")
+	$(warning "No support for libnl3/libnl-route-3; /sbin/ip will be used")
+	$(warning "==========================================================")
+endif
+	$(CXX) -o $(BIN) $(OBJS) $(LIBS) $(LDFLAGS)
 
 kafel/libkafel.a:
 ifeq ("$(wildcard kafel/Makefile)","")
@@ -107,50 +78,48 @@ ifeq ("$(wildcard kafel/Makefile)","")
 endif
 	$(MAKE) -C kafel
 
-protobuf-c-text/protobuf-c-text/.libs/libprotobuf-c-text.a:
-ifeq ("$(wildcard protobuf-c-text/configure)","")
-	git submodule update --init
-endif
-ifeq ("$(wildcard protobuf-c-text/Makefile)","")
-	sh -c "cd protobuf-c-text; CFLAGS=\"-fPIC -I/usr/include/google $(EXTRA_CFLAGS)\" ./autogen.sh --enable-shared=no --disable-doxygen-doc;"
-endif
-	$(MAKE) -C protobuf-c-text
+# Sequence of proto deps, which doesn't fit automatic make rules
+config.o: $(SRCS_PB_O) $(SRCS_PB_H)
+$(SRCS_PB_O): $(SRCS_PB_CXX) $(SRCS_PB_H)
+$(SRCS_PB_CXX) $(SRCS_PB_H): $(SRCS_PROTO)
+	protoc --cpp_out=. $(SRCS_PROTO)
 
-$(PROTO_DEPS): config.proto
-	protoc-c --c_out=. config.proto
-
+.PHONY: clean
 clean:
-	$(RM) core Makefile.bak $(OBJS) $(BIN) $(PROTO_DEPS)
+	$(RM) core Makefile.bak $(OBJS) $(SRCS_PB_CXX) $(SRCS_PB_H) $(BIN)
 ifneq ("$(wildcard kafel/Makefile)","")
 	$(MAKE) -C kafel clean
 endif
-ifneq ("$(wildcard protobuf-c-text/Makefile)","")
-	$(MAKE) -C protobuf-c-text clean
-endif
 
-depend:
-	makedepend -Y -Ykafel/include -- -- $(SRCS)
+.PHONY: depend
+depend: all
+	makedepend -Y -Ykafel/include -- -- $(SRCS_CXX) $(SRCS_PB_CXX)
 
+.PHONY: indent
 indent:
-	indent -linux -l100 -lc100 *.c *.h; rm -f *~
+	clang-format -style="{BasedOnStyle: google, IndentWidth: 8, UseTab: Always, IndentCaseLabels: false, ColumnLimit: 100, AlignAfterOpenBracket: false, AllowShortFunctionsOnASingleLine: false}" -i -sort-includes *.h $(SRCS_CXX)
+	clang-format -style="{BasedOnStyle: google, IndentWidth: 4, UseTab: Always, ColumnLimit: 100}" -i $(SRCS_PROTO)
 
 # DO NOT DELETE THIS LINE -- make depend depends on it.
 
-nsjail.o: nsjail.h common.h caps.h cmdline.h log.h net.h subproc.h util.h
-caps.o: caps.h common.h log.h util.h
-cmdline.o: cmdline.h common.h caps.h config.h log.h mount.h util.h user.h
-config.o: common.h caps.h config.h log.h mount.h user.h util.h
-contain.o: contain.h common.h caps.h cgroup.h cpu.h log.h mount.h net.h pid.h
-contain.o: user.h util.h uts.h
-log.o: log.h common.h
-cgroup.o: cgroup.h common.h log.h util.h
-mount.o: mount.h common.h log.h subproc.h util.h
-net.o: net.h common.h log.h subproc.h
-pid.o: pid.h common.h log.h subproc.h
-sandbox.o: sandbox.h common.h kafel/include/kafel.h log.h
-subproc.o: subproc.h common.h cgroup.h contain.h log.h net.h sandbox.h user.h
-subproc.o: util.h
-user.o: user.h common.h log.h subproc.h util.h
-util.o: util.h common.h log.h
-uts.o: uts.h common.h log.h
-cpu.o: cpu.h common.h log.h util.h
+caps.o: caps.h nsjail.h logs.h macros.h util.h
+cgroup.o: cgroup.h nsjail.h logs.h util.h
+cmdline.o: cmdline.h nsjail.h caps.h config.h logs.h macros.h mnt.h user.h
+cmdline.o: util.h
+config.o: caps.h nsjail.h cmdline.h config.h config.pb.h logs.h macros.h
+config.o: mnt.h user.h util.h
+contain.o: contain.h nsjail.h caps.h cgroup.h cpu.h logs.h macros.h mnt.h
+contain.o: net.h pid.h user.h uts.h
+cpu.o: cpu.h nsjail.h logs.h util.h
+logs.o: logs.h macros.h util.h nsjail.h
+mnt.o: mnt.h nsjail.h logs.h macros.h subproc.h util.h
+net.o: net.h nsjail.h logs.h subproc.h
+nsjail.o: nsjail.h cmdline.h logs.h macros.h net.h sandbox.h subproc.h util.h
+pid.o: pid.h nsjail.h logs.h subproc.h
+sandbox.o: sandbox.h nsjail.h kafel/include/kafel.h logs.h
+subproc.o: subproc.h nsjail.h cgroup.h contain.h logs.h macros.h net.h
+subproc.o: sandbox.h user.h util.h
+uts.o: uts.h nsjail.h logs.h
+user.o: user.h nsjail.h logs.h macros.h subproc.h util.h
+util.o: util.h nsjail.h logs.h macros.h
+config.pb.o: config.pb.h

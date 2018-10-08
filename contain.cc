@@ -24,10 +24,8 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <grp.h>
 #include <inttypes.h>
-#include <linux/capability.h>
-#include <sched.h>
+#include <limits.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -37,67 +35,62 @@
 #include <sys/personality.h>
 #include <sys/prctl.h>
 #include <sys/resource.h>
-#include <sys/stat.h>
-#include <sys/syscall.h>
-#include <sys/time.h>
 #include <unistd.h>
+
+#include <algorithm>
 
 #include "caps.h"
 #include "cgroup.h"
 #include "cpu.h"
-#include "log.h"
-#include "mount.h"
+#include "logs.h"
+#include "macros.h"
+#include "mnt.h"
 #include "net.h"
 #include "pid.h"
 #include "user.h"
-#include "util.h"
 #include "uts.h"
 
-static bool containUserNs(struct nsjconf_t *nsjconf)
-{
-	return userInitNsFromChild(nsjconf);
+namespace contain {
+
+static bool containUserNs(nsjconf_t* nsjconf) {
+	return user::initNsFromChild(nsjconf);
 }
 
-static bool containInitPidNs(struct nsjconf_t *nsjconf)
-{
-	return pidInitNs(nsjconf);
+static bool containInitPidNs(nsjconf_t* nsjconf) {
+	return pid::initNs(nsjconf);
 }
 
-static bool containInitNetNs(struct nsjconf_t *nsjconf)
-{
-	return netInitNsFromChild(nsjconf);
+static bool containInitNetNs(nsjconf_t* nsjconf) {
+	return net::initNsFromChild(nsjconf);
 }
 
-static bool containInitUtsNs(struct nsjconf_t *nsjconf)
-{
-	return utsInitNs(nsjconf);
+static bool containInitUtsNs(nsjconf_t* nsjconf) {
+	return uts::initNs(nsjconf);
 }
 
-static bool containInitCgroupNs(void)
-{
-	return cgroupInitNs();
+static bool containInitCgroupNs(void) {
+	return cgroup::initNs();
 }
 
-static bool containDropPrivs(struct nsjconf_t *nsjconf)
-{
+static bool containDropPrivs(nsjconf_t* nsjconf) {
 #ifndef PR_SET_NO_NEW_PRIVS
 #define PR_SET_NO_NEW_PRIVS 38
 #endif
-	if (nsjconf->disable_no_new_privs == false) {
-		if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) == -1) {
+	if (!nsjconf->disable_no_new_privs) {
+		if (prctl(PR_SET_NO_NEW_PRIVS, 1UL, 0UL, 0UL, 0UL) == -1) {
 			/* Only new kernels support it */
 			PLOG_W("prctl(PR_SET_NO_NEW_PRIVS, 1)");
 		}
 	}
-	if (capsInitNs(nsjconf) == false) {
+
+	if (!caps::initNs(nsjconf)) {
 		return false;
 	}
 
 	return true;
 }
 
-static bool containPrepareEnv(struct nsjconf_t *nsjconf)
-{
+static bool containPrepareEnv(nsjconf_t* nsjconf) {
 	if (prctl(PR_SET_PDEATHSIG, SIGKILL, 0, 0, 0) == -1) {
 		PLOG_E("prctl(PR_SET_PDEATHSIG, SIGKILL)");
 		return false;
@@ -110,76 +103,66 @@ static bool containPrepareEnv(struct nsjconf_t *nsjconf)
 	if (setpriority(PRIO_PROCESS, 0, 19) == -1 && errno != 0) {
 		PLOG_W("setpriority(19)");
 	}
-	if (nsjconf->skip_setsid == false) {
+	if (!nsjconf->skip_setsid) {
 		setsid();
 	}
 	return true;
 }
 
-static bool containInitMountNs(struct nsjconf_t *nsjconf)
-{
-	return mountInitNs(nsjconf);
+static bool containInitMountNs(nsjconf_t* nsjconf) {
+	return mnt::initNs(nsjconf);
 }
 
-static bool containCPU(struct nsjconf_t *nsjconf)
-{
-	return cpuInit(nsjconf);
+static bool containCPU(nsjconf_t* nsjconf) {
+	return cpu::initCpu(nsjconf);
 }
 
-static bool containSetLimits(struct nsjconf_t *nsjconf)
-{
+static bool containSetLimits(nsjconf_t* nsjconf) {
 	struct rlimit64 rl;
 	rl.rlim_cur = rl.rlim_max = nsjconf->rl_as;
-	if (prlimit64(0, RLIMIT_AS, &rl, NULL) == -1) {
-		PLOG_E("prlimit64(0, RLIMIT_AS, %" PRIu64 ")", nsjconf->rl_as);
+	if (setrlimit64(RLIMIT_AS, &rl) == -1) {
+		PLOG_E("setrlimit64(0, RLIMIT_AS, %" PRIu64 ")", nsjconf->rl_as);
 		return false;
 	}
 	rl.rlim_cur = rl.rlim_max = nsjconf->rl_core;
-	if (prlimit64(0, RLIMIT_CORE, &rl, NULL) == -1) {
-		PLOG_E("prlimit64(0, RLIMIT_CORE, %" PRIu64 ")", nsjconf->rl_core);
+	if (setrlimit64(RLIMIT_CORE, &rl) == -1) {
+		PLOG_E("setrlimit64(0, RLIMIT_CORE, %" PRIu64 ")", nsjconf->rl_core);
 		return false;
 	}
 	rl.rlim_cur = rl.rlim_max = nsjconf->rl_cpu;
-	if (prlimit64(0, RLIMIT_CPU, &rl, NULL) == -1) {
-		PLOG_E("prlimit64(0, RLIMIT_CPU, %" PRIu64 ")", nsjconf->rl_cpu);
+	if (setrlimit64(RLIMIT_CPU, &rl) == -1) {
+		PLOG_E("setrlimit64(0, RLIMIT_CPU, %" PRIu64 ")", nsjconf->rl_cpu);
 		return false;
 	}
 	rl.rlim_cur = rl.rlim_max = nsjconf->rl_fsize;
-	if (prlimit64(0, RLIMIT_FSIZE, &rl, NULL) == -1) {
-		PLOG_E("prlimit64(0, RLIMIT_FSIZE, %" PRIu64 ")", nsjconf->rl_fsize);
+	if (setrlimit64(RLIMIT_FSIZE, &rl) == -1) {
+		PLOG_E("setrlimit64(0, RLIMIT_FSIZE, %" PRIu64 ")", nsjconf->rl_fsize);
 		return false;
 	}
 	rl.rlim_cur = rl.rlim_max = nsjconf->rl_nofile;
-	if (prlimit64(0, RLIMIT_NOFILE, &rl, NULL) == -1) {
-		PLOG_E("prlimit64(0, RLIMIT_NOFILE, %" PRIu64 ")", nsjconf->rl_nofile);
+	if (setrlimit64(RLIMIT_NOFILE, &rl) == -1) {
+		PLOG_E("setrlimit64(0, RLIMIT_NOFILE, %" PRIu64 ")", nsjconf->rl_nofile);
 		return false;
 	}
 	rl.rlim_cur = rl.rlim_max = nsjconf->rl_nproc;
-	if (prlimit64(0, RLIMIT_NPROC, &rl, NULL) == -1) {
-		PLOG_E("prlimit64(0, RLIMIT_NPROC, %" PRIu64 ")", nsjconf->rl_nproc);
+	if (setrlimit64(RLIMIT_NPROC, &rl) == -1) {
+		PLOG_E("setrlimit64(0, RLIMIT_NPROC, %" PRIu64 ")", nsjconf->rl_nproc);
 		return false;
 	}
 	rl.rlim_cur = rl.rlim_max = nsjconf->rl_stack;
-	if (prlimit64(0, RLIMIT_STACK, &rl, NULL) == -1) {
-		PLOG_E("prlimit64(0, RLIMIT_STACK, %" PRIu64 ")", nsjconf->rl_stack);
+	if (setrlimit64(RLIMIT_STACK, &rl) == -1) {
+		PLOG_E("setrlimit64(0, RLIMIT_STACK, %" PRIu64 ")", nsjconf->rl_stack);
 		return false;
 	}
 	return true;
 }
 
-static bool containPassFd(struct nsjconf_t *nsjconf, int fd)
-{
-	struct ints_t *p;
-	TAILQ_FOREACH(p, &nsjconf->open_fds, pointers) {
-		if (p->val == fd) {
-			return true;
-		}
-	}
-	return false;
+static bool containPassFd(nsjconf_t* nsjconf, int fd) {
+	return (std::find(nsjconf->openfds.begin(), nsjconf->openfds.end(), fd) !=
+		nsjconf->openfds.end());
 }
 
-static bool containMakeFdsCOENaive(struct nsjconf_t *nsjconf)
-{
+static bool containMakeFdsCOENaive(nsjconf_t* nsjconf) {
 	/*
 	 * Don't use getrlimit(RLIMIT_NOFILE) here, as it can return an artifically small value
 	 * (e.g. 32), which could be smaller than a maximum assigned number to file-descriptors
@@ -206,14 +189,13 @@ static bool containMakeFdsCOENaive(struct nsjconf_t *nsjconf)
 	return true;
 }
 
-static bool containMakeFdsCOEProc(struct nsjconf_t *nsjconf)
-{
+static bool containMakeFdsCOEProc(nsjconf_t* nsjconf) {
 	int dirfd = open("/proc/self/fd", O_DIRECTORY | O_RDONLY | O_CLOEXEC);
 	if (dirfd == -1) {
-		PLOG_D("open('/proc/self/fd', O_DIRECTORY|O_RDONLY)");
+		PLOG_D("open('/proc/self/fd', O_DIRECTORY|O_RDONLY|O_CLOEXEC)");
 		return false;
 	}
-	DIR *dir = fdopendir(dirfd);
+	DIR* dir = fdopendir(dirfd);
 	if (dir == NULL) {
 		PLOG_W("fdopendir(fd=%d)", dirfd);
 		close(dirfd);
@@ -222,7 +204,7 @@ static bool containMakeFdsCOEProc(struct nsjconf_t *nsjconf)
 	/* Make all fds above stderr close-on-exec */
 	for (;;) {
 		errno = 0;
-		struct dirent *entry = readdir(dir);
+		struct dirent* entry = readdir(dir);
 		if (entry == NULL && errno != 0) {
 			PLOG_D("readdir('/proc/self/fd')");
 			closedir(dir);
@@ -237,14 +219,15 @@ static bool containMakeFdsCOEProc(struct nsjconf_t *nsjconf)
 		if (strcmp("..", entry->d_name) == 0) {
 			continue;
 		}
-		int fd = strtoul(entry->d_name, NULL, 10);
-		if (errno == EINVAL) {
-			LOG_W("Cannot convert /proc/self/fd/%s to a number", entry->d_name);
+		errno = 0;
+		int fd = strtoimax(entry->d_name, NULL, 10);
+		if (errno != 0) {
+			PLOG_W("Cannot convert /proc/self/fd/%s to a number", entry->d_name);
 			continue;
 		}
 		int flags = TEMP_FAILURE_RETRY(fcntl(fd, F_GETFD, 0));
 		if (flags == -1) {
-			PLOG_D("fcntl(fd, F_GETFD, 0)");
+			PLOG_D("fcntl(fd=%xld, F_GETFD, 0)", fd);
 			closedir(dir);
 			return false;
 		}
@@ -268,81 +251,85 @@ static bool containMakeFdsCOEProc(struct nsjconf_t *nsjconf)
 	return true;
 }
 
-static bool containMakeFdsCOE(struct nsjconf_t *nsjconf)
-{
-	if (containMakeFdsCOEProc(nsjconf) == true) {
+static bool containMakeFdsCOE(nsjconf_t* nsjconf) {
+	if (containMakeFdsCOEProc(nsjconf)) {
 		return true;
 	}
-	if (containMakeFdsCOENaive(nsjconf) == true) {
+	if (containMakeFdsCOENaive(nsjconf)) {
 		return true;
 	}
 	LOG_E("Couldn't mark relevant file-descriptors as close-on-exec with any known method");
 	return false;
 }
 
-bool containSetupFD(struct nsjconf_t * nsjconf, int fd_in, int fd_out, int fd_err)
-{
-	if (nsjconf->mode != MODE_LISTEN_TCP) {
-		if (nsjconf->is_silent == false) {
-			return true;
+bool setupFD(nsjconf_t* nsjconf, int fd_in, int fd_out, int fd_err) {
+	if (nsjconf->stderr_to_null) {
+		LOG_D("Redirecting FD=2 (STDERR_FILENO) to /dev/null");
+		if ((fd_err = TEMP_FAILURE_RETRY(open("/dev/null", O_RDWR))) == -1) {
+			PLOG_E("open('/dev/null', O_RDWR");
+			return false;
 		}
+	}
+	if (nsjconf->is_silent) {
+		LOG_D("Redirecting FD=0/1/2 (STDIN/OUT/ERR_FILENO) to /dev/null");
 		if (TEMP_FAILURE_RETRY(fd_in = fd_out = fd_err = open("/dev/null", O_RDWR)) == -1) {
 			PLOG_E("open('/dev/null', O_RDWR)");
 			return false;
 		}
 	}
 	/* Set stdin/stdout/stderr to the net */
-	if (TEMP_FAILURE_RETRY(dup2(fd_in, STDIN_FILENO)) == -1) {
+	if (fd_in != STDIN_FILENO && TEMP_FAILURE_RETRY(dup2(fd_in, STDIN_FILENO)) == -1) {
 		PLOG_E("dup2(%d, STDIN_FILENO)", fd_in);
 		return false;
 	}
-	if (TEMP_FAILURE_RETRY(dup2(fd_out, STDOUT_FILENO)) == -1) {
+	if (fd_out != STDOUT_FILENO && TEMP_FAILURE_RETRY(dup2(fd_out, STDOUT_FILENO)) == -1) {
 		PLOG_E("dup2(%d, STDOUT_FILENO)", fd_out);
 		return false;
 	}
-	if (TEMP_FAILURE_RETRY(dup2(fd_err, STDERR_FILENO)) == -1) {
+	if (fd_err != STDERR_FILENO && TEMP_FAILURE_RETRY(dup2(fd_err, STDERR_FILENO)) == -1) {
 		PLOG_E("dup2(%d, STDERR_FILENO)", fd_err);
 		return false;
 	}
 	return true;
 }
 
-bool containContain(struct nsjconf_t * nsjconf)
-{
-	if (containUserNs(nsjconf) == false) {
+bool containProc(nsjconf_t* nsjconf) {
+	if (!containUserNs(nsjconf)) {
 		return false;
 	}
-	if (containInitPidNs(nsjconf) == false) {
+	if (!containInitPidNs(nsjconf)) {
 		return false;
 	}
-	if (containInitMountNs(nsjconf) == false) {
+	if (!containInitMountNs(nsjconf)) {
 		return false;
 	}
-	if (containInitNetNs(nsjconf) == false) {
+	if (!containInitNetNs(nsjconf)) {
 		return false;
 	}
-	if (containInitUtsNs(nsjconf) == false) {
+	if (!containInitUtsNs(nsjconf)) {
 		return false;
 	}
-	if (containInitCgroupNs() == false) {
+	if (!containInitCgroupNs()) {
 		return false;
 	}
-	if (containDropPrivs(nsjconf) == false) {
+	if (!containDropPrivs(nsjconf)) {
 		return false;
 	}
 	/* */
 	/* As non-root */
-	if (containCPU(nsjconf) == false) {
+	if (!containCPU(nsjconf)) {
 		return false;
 	}
-	if (containSetLimits(nsjconf) == false) {
+	if (!containSetLimits(nsjconf)) {
 		return false;
 	}
-	if (containPrepareEnv(nsjconf) == false) {
+	if (!containPrepareEnv(nsjconf)) {
 		return false;
 	}
-	if (containMakeFdsCOE(nsjconf) == false) {
+	if (!containMakeFdsCOE(nsjconf)) {
 		return false;
 	}
 	return true;
 }
+
+}  // namespace contain

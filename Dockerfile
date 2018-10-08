@@ -3,20 +3,17 @@ FROM ubuntu:16.04
 RUN apt-get -y update && apt-get install -y \
     autoconf \
     bison \
-    check \
     flex \
     gcc \
+    g++ \
     git \
+    libprotobuf-dev \
     libtool \
     make \
     pkg-config \
-    protobuf-c-compiler \
-    re2c \
-    libcap-dev \
+    protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
-RUN git clone https://github.com/google/nsjail.git
+COPY . /nsjail
 
-WORKDIR /nsjail
-
-RUN make && mv /nsjail/nsjail /bin && rm -rf -- /nsjail
+RUN cd /nsjail && make && mv /nsjail/nsjail /bin && rm -rf -- /nsjail

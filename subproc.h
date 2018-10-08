@@ -22,20 +22,26 @@
 #ifndef NS_PROC_H
 #define NS_PROC_H
 
-#include "common.h"
-
 #include <inttypes.h>
+#include <stdbool.h>
 #include <unistd.h>
 
-void subprocRunChild(struct nsjconf_t *nsjconf, int fd_in, int fd_out, int fd_err);
-int subprocCount(struct nsjconf_t *nsjconf);
-void subprocDisplay(struct nsjconf_t *nsjconf);
-void subprocKillAll(struct nsjconf_t *nsjconf);
-int subprocSystem(const char **argv, char **env);
-pid_t subprocClone(uintptr_t flags);
-void subprocCloneFlags(struct nsjconf_t *nsjconf);
+#include <string>
+#include <vector>
 
+#include "nsjail.h"
+
+namespace subproc {
+
+bool runChild(nsjconf_t* nsjconf, int fd_in, int fd_out, int fd_err);
+int countProc(nsjconf_t* nsjconf);
+void displayProc(nsjconf_t* nsjconf);
+void killAndReapAll(nsjconf_t* nsjconf);
 /* Returns the exit code of the first failing subprocess, or 0 if none fail */
-int subprocReap(struct nsjconf_t *nsjconf);
+int reapProc(nsjconf_t* nsjconf);
+int systemExe(const std::vector<std::string>& args, char** env);
+pid_t cloneProc(uintptr_t flags);
 
-#endif				/* NS_PROC_H */
+}  // namespace subproc
+
+#endif /* NS_PROC_H */

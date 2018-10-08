@@ -26,21 +26,34 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-#include "common.h"
+#include <string>
+#include <vector>
 
-void *utilMalloc(size_t sz);
-void *utilCalloc(size_t sz);
-char *utilStrDup(const char *str);
-uint8_t *utilMemDup(const uint8_t * src, size_t len);
-ssize_t utilReadFromFd(int fd, void *buf, size_t len);
-ssize_t utilReadFromFile(const char *fname, void *buf, size_t len);
-ssize_t utilWriteToFd(int fd, const void *buf, size_t len);
-bool utilWriteBufToFile(const char *filename, const void *buf, size_t len, int open_flags);
-bool utilCreateDirRecursively(const char *dir);
-int utilSSnPrintf(char *str, size_t size, const char *format, ...);
-bool utilIsANumber(const char *s);
-uint64_t utilRnd64(void);
-const char *utilSigName(int signo);
-const char *utilTimeToStr(time_t t);
+#include "nsjail.h"
 
-#endif				/* NS_UTIL_H */
+#define RETURN_ON_FAILURE(expr)       \
+	do {                          \
+		if (!(expr)) {        \
+			return false; \
+		}                     \
+	} while (0)
+
+namespace util {
+
+ssize_t readFromFd(int fd, void* buf, size_t len);
+ssize_t readFromFile(const char* fname, void* buf, size_t len);
+ssize_t writeToFd(int fd, const void* buf, size_t len);
+bool writeBufToFile(const char* filename, const void* buf, size_t len, int open_flags);
+bool createDirRecursively(const char* dir);
+std::string* StrAppend(std::string* str, const char* format, ...)
+    __attribute__((format(printf, 2, 3)));
+std::string StrPrintf(const char* format, ...) __attribute__((format(printf, 1, 2)));
+bool isANumber(const char* s);
+uint64_t rnd64(void);
+const std::string sigName(int signo);
+const std::string timeToStr(time_t t);
+std::vector<std::string> strSplit(const std::string str, char delim);
+
+}  // namespace util
+
+#endif /* NS_UTIL_H */

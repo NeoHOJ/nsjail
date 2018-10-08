@@ -1,6 +1,6 @@
 /*
 
-   nsjail - CLONE_NEWNS routines
+   nsjail - CLONE_NEWUTS routines
    -----------------------------------------
 
    Copyright 2014 Google Inc. All Rights Reserved.
@@ -19,20 +19,26 @@
 
 */
 
-#ifndef NS_MOUNT_H
-#define NS_MOUNT_H
+#include "uts.h"
 
-#include <stdbool.h>
+#include <string.h>
+#include <unistd.h>
 
-#include "common.h"
+#include "logs.h"
 
-const char *mountFlagsToStr(uintptr_t flags);
-bool mountIsDir(const char *path);
-bool mountInitNs(struct nsjconf_t *nsjconf);
-bool mountAddMountPt(struct nsjconf_t *nsjconf, const char *src, const char *dst,
-		     const char *fstype, const char *options, uintptr_t flags, const bool * isDir,
-		     bool mandatory, const char *src_env, const char *dst_env,
-		     const uint8_t * src_content, size_t src_content_len, bool is_symlink);
-const char *mountDescribeMountPt(struct mounts_t *mpt);
+namespace uts {
 
-#endif				/* NS_MOUNT_H */
+bool initNs(nsjconf_t* nsjconf) {
+	if (!nsjconf->clone_newuts) {
+		return true;
+	}
+
+	LOG_D("Setting hostname to '%s'", nsjconf->hostname.c_str());
+	if (sethostname(nsjconf->hostname.data(), nsjconf->hostname.length()) == -1) {
+		PLOG_E("sethostname('%s')", nsjconf->hostname.c_str());
+		return false;
+	}
+	return true;
+}
+
+}  // namespace uts

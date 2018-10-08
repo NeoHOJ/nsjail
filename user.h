@@ -24,12 +24,17 @@
 
 #include <stdbool.h>
 
-#include "common.h"
+#include <string>
 
-bool userInitNsFromParent(struct nsjconf_t *nsjconf, pid_t pid);
-bool userInitNsFromChild(struct nsjconf_t *nsjconf);
+#include "nsjail.h"
 
-bool userParseId(struct nsjconf_t *nsjconf, const char *i_id, const char *o_id, size_t cnt,
-		 bool is_gid, bool is_newidmap);
+namespace user {
 
-#endif				/* NS_USER_H */
+bool initNsFromParent(nsjconf_t* nsjconf, pid_t pid);
+bool initNsFromChild(nsjconf_t* nsjconf);
+bool parseId(nsjconf_t* nsjconf, const std::string& i_id, const std::string& o_id, size_t cnt,
+    bool is_gid, bool is_newidmap);
+
+}  // namespace user
+
+#endif /* NS_USER_H */

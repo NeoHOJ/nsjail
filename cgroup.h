@@ -25,10 +25,14 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "common.h"
+#include "nsjail.h"
 
-bool cgroupInitNsFromParent(struct nsjconf_t *nsjconf, pid_t pid);
-bool cgroupInitNs(void);
-void cgroupFinishFromParent(struct nsjconf_t *nsjconf, pid_t pid);
+namespace cgroup {
 
-#endif				/* _CGROUP_H */
+bool initNsFromParent(nsjconf_t* nsjconf, pid_t pid);
+bool initNs(void);
+void finishFromParent(nsjconf_t* nsjconf, pid_t pid);
+
+}  // namespace cgroup
+
+#endif /* _CGROUP_H */

@@ -23,10 +23,13 @@
 #define NS_UTS_H
 
 #include <stdbool.h>
-#include <stddef.h>
 
-#include "common.h"
+#include "nsjail.h"
 
-bool utsInitNs(struct nsjconf_t *nsjconf);
+namespace uts {
 
-#endif				/* NS_UTS_H */
+bool initNs(nsjconf_t* nsjconf);
+
+}  // namespace uts
+
+#endif /* NS_UTS_H */

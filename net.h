@@ -25,13 +25,19 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include "common.h"
+#include <string>
 
-bool netLimitConns(struct nsjconf_t *nsjconf, int connsock);
-int netGetRecvSocket(const char *bindhost, int port);
-int netAcceptConn(int listenfd);
-void netConnToText(int fd, bool remote, char *buf, size_t s, struct sockaddr_in6 *addr_or_null);
-bool netInitNsFromParent(struct nsjconf_t *nsjconf, int pid);
-bool netInitNsFromChild(struct nsjconf_t *nsjconf);
+#include "nsjail.h"
 
-#endif				/* _NET_H */
+namespace net {
+
+bool limitConns(nsjconf_t* nsjconf, int connsock);
+int getRecvSocket(const char* bindhost, int port);
+int acceptConn(int listenfd);
+const std::string connToText(int fd, bool remote, struct sockaddr_in6* addr_or_null);
+bool initNsFromParent(nsjconf_t* nsjconf, int pid);
+bool initNsFromChild(nsjconf_t* nsjconf);
+
+}  // namespace net
+
+#endif /* _NET_H */

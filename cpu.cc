@@ -21,23 +21,26 @@
 
 #include "cpu.h"
 
+#include <inttypes.h>
 #include <sched.h>
+#include <stdint.h>
 #include <string.h>
 #include <unistd.h>
 
-#include "log.h"
+#include "logs.h"
 #include "util.h"
 
-static void cpuSetRandomCpu(cpu_set_t * mask, size_t mask_size, size_t cpu_num)
-{
-	if ((size_t) CPU_COUNT_S(mask_size, mask) >= cpu_num) {
-		LOG_F
-		    ("Number of CPUs in the mask '%d' is bigger than number of available CPUs '%zu'",
-		     CPU_COUNT(mask), cpu_num);
+namespace cpu {
+
+static void setRandomCpu(cpu_set_t* mask, size_t mask_size, size_t cpu_num) {
+	if ((size_t)CPU_COUNT_S(mask_size, mask) >= cpu_num) {
+		LOG_F(
+		    "Number of CPUs in the mask '%d' is bigger than number of available CPUs '%zu'",
+		    CPU_COUNT(mask), cpu_num);
 	}
 
 	for (;;) {
-		uint64_t n = utilRnd64() % cpu_num;
+		uint64_t n = util::rnd64() % cpu_num;
 		if (!CPU_ISSET_S(n, mask_size, mask)) {
 			LOG_D("Setting allowed CPU#:%" PRIu64 " of [0-%zu]", n, cpu_num - 1);
 			CPU_SET_S(n, mask_size, mask);
@@ -46,18 +49,17 @@ static void cpuSetRandomCpu(cpu_set_t * mask, size_t mask_size, size_t cpu_num)
 	}
 }
 
-bool cpuInit(struct nsjconf_t *nsjconf)
-{
+bool initCpu(nsjconf_t* nsjconf) {
 	if (nsjconf->num_cpus < 0) {
 		PLOG_W("sysconf(_SC_NPROCESSORS_ONLN) returned %ld", nsjconf->num_cpus);
 		return false;
 	}
-	if (nsjconf->max_cpus > (size_t) nsjconf->num_cpus) {
+	if (nsjconf->max_cpus > (size_t)nsjconf->num_cpus) {
 		LOG_W("Requested number of CPUs:%zu is bigger than CPUs online:%ld",
-		      nsjconf->max_cpus, nsjconf->num_cpus);
+		    nsjconf->max_cpus, nsjconf->num_cpus);
 		return true;
 	}
-	if (nsjconf->max_cpus == (size_t) nsjconf->num_cpus) {
+	if (nsjconf->max_cpus == (size_t)nsjconf->num_cpus) {
 		LOG_D("All CPUs requested (%zu of %ld)", nsjconf->max_cpus, nsjconf->num_cpus);
 		return true;
 	}
@@ -66,7 +68,7 @@ bool cpuInit(struct nsjconf_t *nsjconf)
 		return true;
 	}
 
-	cpu_set_t *mask = CPU_ALLOC(nsjconf->num_cpus);
+	cpu_set_t* mask = CPU_ALLOC(nsjconf->num_cpus);
 	if (mask == NULL) {
 		PLOG_W("Failure allocating cpu_set_t for %ld CPUs", nsjconf->num_cpus);
 		return false;
@@ -76,7 +78,7 @@ bool cpuInit(struct nsjconf_t *nsjconf)
 	CPU_ZERO_S(mask_size, mask);
 
 	for (size_t i = 0; i < nsjconf->max_cpus; i++) {
-		cpuSetRandomCpu(mask, mask_size, nsjconf->num_cpus);
+		setRandomCpu(mask, mask_size, nsjconf->num_cpus);
 	}
 
 	if (sched_setaffinity(0, mask_size, mask) == -1) {
@@ -88,3 +90,5 @@ bool cpuInit(struct nsjconf_t *nsjconf)
 
 	return true;
 }
+
+}  // namespace cpu

@@ -24,8 +24,14 @@
 
 #include <stdbool.h>
 
-#include "common.h"
+#include "nsjail.h"
 
-bool sandboxApply(struct nsjconf_t *nsjconf);
+namespace sandbox {
 
-#endif				/* NS_SANDBOX_H */
+bool applyPolicy(nsjconf_t* nsjconf);
+bool preparePolicy(nsjconf_t* nsjconf);
+void closePolicy(nsjconf_t* nsjconf);
+
+}  // namespace sandbox
+
+#endif /* NS_SANDBOX_H */

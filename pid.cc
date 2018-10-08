@@ -24,22 +24,31 @@
 #include <linux/sched.h>
 #include <sched.h>
 #include <signal.h>
+#include <stddef.h>
 #include <sys/prctl.h>
-#include <sys/syscall.h>
 #include <unistd.h>
 
-#include "log.h"
+#include "logs.h"
 #include "subproc.h"
 
-bool pidInitNs(struct nsjconf_t *nsjconf)
-{
+namespace pid {
+
+bool initNs(nsjconf_t* nsjconf) {
 	if (nsjconf->mode != MODE_STANDALONE_EXECVE) {
+		return true;
+	}
+	if (!nsjconf->clone_newpid) {
 		return true;
 	}
 
 	LOG_D("Creating a dummy 'init' process");
 
-	pid_t pid = subprocClone(CLONE_FS);
+	/*
+	 * If -Me is used then we need to create permanent init inside PID ns, otherwise only the
+	 * first clone/fork will work, and the rest will fail with ENOMEM (see 'man pid_namespaces'
+	 * for details on this behavior)
+	 */
+	pid_t pid = subproc::cloneProc(CLONE_FS);
 	if (pid == -1) {
 		PLOG_E("Couldn't create a dummy init process");
 		return false;
@@ -51,7 +60,7 @@ bool pidInitNs(struct nsjconf_t *nsjconf)
 	if (prctl(PR_SET_PDEATHSIG, SIGKILL, 0UL, 0UL, 0UL) == -1) {
 		PLOG_W("(prctl(PR_SET_PDEATHSIG, SIGKILL) failed");
 	}
-	if (prctl(PR_SET_NAME, "init", 0UL, 0UL, 0UL) == -1) {
+	if (prctl(PR_SET_NAME, "ns-init", 0UL, 0UL, 0UL) == -1) {
 		PLOG_W("(prctl(PR_SET_NAME, 'init') failed");
 	}
 	if (prctl(PR_SET_DUMPABLE, 0UL, 0UL, 0UL, 0UL) == -1) {
@@ -59,12 +68,12 @@ bool pidInitNs(struct nsjconf_t *nsjconf)
 	}
 
 	/* Act sort-a like a init by reaping zombie processes */
-	struct sigaction sa = {
-		.sa_handler = SIG_DFL,
-		.sa_flags = SA_NOCLDWAIT | SA_NOCLDSTOP,
-		.sa_restorer = NULL,
-	};
+	struct sigaction sa;
+	sa.sa_handler = SIG_DFL;
+	sa.sa_flags = SA_NOCLDWAIT | SA_NOCLDSTOP;
+	sa.sa_restorer = NULL;
 	sigemptyset(&sa.sa_mask);
+
 	if (sigaction(SIGCHLD, &sa, NULL) == -1) {
 		PLOG_W("Couldn't set sighandler for SIGCHLD");
 	}
@@ -73,3 +82,5 @@ bool pidInitNs(struct nsjconf_t *nsjconf)
 		pause();
 	}
 }
+
+}  // namespace pid

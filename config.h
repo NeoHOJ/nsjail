@@ -22,8 +22,14 @@
 #ifndef NS_CONFIG_H
 #define NS_CONFIG_H
 
-#include "common.h"
+#include <stdbool.h>
 
-bool configParse(struct nsjconf_t *nsjconf, const char *file);
+#include "nsjail.h"
 
-#endif				/*  NS_CONFIG_H */
+namespace config {
+
+bool parseFile(nsjconf_t* nsjconf, const char* file);
+
+}  // namespace config
+
+#endif /*  NS_CONFIG_H */

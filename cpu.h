@@ -23,10 +23,13 @@
 #define NS_CPU_H
 
 #include <stdbool.h>
-#include <stddef.h>
 
-#include "common.h"
+#include "nsjail.h"
 
-bool cpuInit(struct nsjconf_t *nsjconf);
+namespace cpu {
 
-#endif				/* NS_CPU_H */
+bool initCpu(nsjconf_t* nsjconf);
+
+}  // namespace cpu
+
+#endif /* NS_CPU_H */

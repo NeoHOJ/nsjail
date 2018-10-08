@@ -24,9 +24,13 @@
 
 #include <stdbool.h>
 
-#include "common.h"
+#include "nsjail.h"
 
-bool containSetupFD(struct nsjconf_t *nsjconf, int fd_in, int fd_out, int fd_err);
-bool containContain(struct nsjconf_t *nsjconf);
+namespace contain {
 
-#endif				/* NS_CONTAIN_H */
+bool setupFD(nsjconf_t* nsjconf, int fd_in, int fd_out, int fd_err);
+bool containProc(nsjconf_t* nsjconf);
+
+}  // namespace contain
+
+#endif /* NS_CONTAIN_H */
