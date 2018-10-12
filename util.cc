@@ -246,6 +246,7 @@ const std::string sigName(int signo) {
 		const int signo;
 		const char* const name;
 	} static const sigNames[] = {
+	    // clang-format off
 	    NS_VALSTR_STRUCT(SIGINT),
 	    NS_VALSTR_STRUCT(SIGILL),
 	    NS_VALSTR_STRUCT(SIGABRT),
@@ -275,6 +276,7 @@ const std::string sigName(int signo) {
 	    NS_VALSTR_STRUCT(SIGUSR1),
 	    NS_VALSTR_STRUCT(SIGUSR2),
 	    NS_VALSTR_STRUCT(SIGWINCH),
+	    // clang-format on
 	};
 
 	for (const auto& i : sigNames) {

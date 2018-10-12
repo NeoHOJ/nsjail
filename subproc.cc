@@ -66,6 +66,7 @@ static const std::string cloneFlagsToStr(uintptr_t flags) {
 		const uintptr_t flag;
 		const char* const name;
 	} static const cloneFlags[] = {
+	    // clang-format off
 	    NS_VALSTR_STRUCT(CLONE_VM),
 	    NS_VALSTR_STRUCT(CLONE_FS),
 	    NS_VALSTR_STRUCT(CLONE_FILES),
@@ -89,6 +90,7 @@ static const std::string cloneFlagsToStr(uintptr_t flags) {
 	    NS_VALSTR_STRUCT(CLONE_NEWPID),
 	    NS_VALSTR_STRUCT(CLONE_NEWNET),
 	    NS_VALSTR_STRUCT(CLONE_IO),
+	    // clang-format on
 	};
 
 	uintptr_t knownFlagMask = CSIGNAL;
@@ -183,7 +185,7 @@ static void subprocNewProc(nsjconf_t* nsjconf, int fd_in, int fd_out, int fd_err
 #if defined(__NR_execveat)
 		syscall(__NR_execveat, (uintptr_t)nsjconf->exec_fd, "", (char* const*)argv.data(),
 		    environ, (uintptr_t)AT_EMPTY_PATH);
-#else  /* defined(__NR_execveat) */
+#else /* defined(__NR_execveat) */
 		LOG_E("Your system doesn't support execveat() syscall");
 		return;
 #endif /* defined(__NR_execveat) */

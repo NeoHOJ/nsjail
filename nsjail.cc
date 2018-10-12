@@ -97,6 +97,7 @@ static bool setTimer(nsjconf_t* nsjconf) {
 	}
 
 	struct itimerval it = {
+	    // clang-format off
 	    .it_interval =
 		{
 		    .tv_sec = 1,
@@ -107,6 +108,7 @@ static bool setTimer(nsjconf_t* nsjconf) {
 		    .tv_sec = 1,
 		    .tv_usec = 0,
 		},
+	    // clang-format on
 	};
 	if (setitimer(ITIMER_REAL, &it, NULL) == -1) {
 		PLOG_E("setitimer(ITIMER_REAL)");

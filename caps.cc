@@ -40,6 +40,7 @@ struct {
 	const int val;
 	const char* const name;
 } static const capNames[] = {
+    // clang-format off
     NS_VALSTR_STRUCT(CAP_CHOWN),
     NS_VALSTR_STRUCT(CAP_DAC_OVERRIDE),
     NS_VALSTR_STRUCT(CAP_DAC_READ_SEARCH),
@@ -76,7 +77,7 @@ struct {
     NS_VALSTR_STRUCT(CAP_MAC_ADMIN),
     NS_VALSTR_STRUCT(CAP_SYSLOG),
     NS_VALSTR_STRUCT(CAP_WAKE_ALARM),
-    NS_VALSTR_STRUCT(CAP_BLOCK_SUSPEND),
+    NS_VALSTR_STRUCT(CAP_BLOCK_SUSPEND),  // clang-format on
 #if defined(CAP_AUDIT_READ)
     NS_VALSTR_STRUCT(CAP_AUDIT_READ),
 #endif /* defined(CAP_AUDIT_READ) */
@@ -109,8 +110,7 @@ static const std::string capToStr(int val) {
 static cap_user_data_t getCaps() {
 	static __thread struct __user_cap_data_struct cap_data[_LINUX_CAPABILITY_U32S_3];
 	const struct __user_cap_header_struct cap_hdr = {
-	    .version = _LINUX_CAPABILITY_VERSION_3,
-	    .pid = 0,
+	    .version = _LINUX_CAPABILITY_VERSION_3, .pid = 0,
 	};
 	if (syscall(__NR_capget, &cap_hdr, &cap_data) == -1) {
 		PLOG_W("capget() failed");
@@ -121,8 +121,7 @@ static cap_user_data_t getCaps() {
 
 static bool setCaps(const cap_user_data_t cap_data) {
 	const struct __user_cap_header_struct cap_hdr = {
-	    .version = _LINUX_CAPABILITY_VERSION_3,
-	    .pid = 0,
+	    .version = _LINUX_CAPABILITY_VERSION_3, .pid = 0,
 	};
 	if (syscall(__NR_capset, &cap_hdr, cap_data) == -1) {
 		PLOG_W("capset() failed");

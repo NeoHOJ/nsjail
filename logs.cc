@@ -99,6 +99,7 @@ void logMsg(enum llevel_t ll, const char* fn, int ln, bool perr, const char* fmt
 		const bool print_time;
 	};
 	static struct ll_t const logLevels[] = {
+	    // clang-format off
 	    {"D", "\033[0;4m", true, true},
 	    {"I", "\033[1m", false, true},
 	    {"W", "\033[0;33m", true, true},
@@ -106,6 +107,7 @@ void logMsg(enum llevel_t ll, const char* fn, int ln, bool perr, const char* fmt
 	    {"F", "\033[7;35m", true, true},
 	    {"HR", "\033[0m", false, false},
 	    {"HB", "\033[1m", false, false},
+	    // clang-format on
 	};
 
 	/* Start printing logs */

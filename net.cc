@@ -470,8 +470,9 @@ bool initNsFromChild(nsjconf_t* nsjconf) {
 	if (nsjconf->iface_lo && !ifaceUp("lo")) {
 		return false;
 	}
-	if (!nsjconf->iface_vs.empty() && !ifaceConfig(IFACE_NAME, nsjconf->iface_vs_ip,
-					      nsjconf->iface_vs_nm, nsjconf->iface_vs_gw)) {
+	if (!nsjconf->iface_vs.empty() &&
+	    !ifaceConfig(
+		IFACE_NAME, nsjconf->iface_vs_ip, nsjconf->iface_vs_nm, nsjconf->iface_vs_gw)) {
 		return false;
 	}
 	return true;

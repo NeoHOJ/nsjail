@@ -36,6 +36,7 @@
 #include <vector>
 
 static const int nssigs[] = {
+    // clang-format off
     SIGINT,
     SIGQUIT,
     SIGUSR1,
@@ -44,6 +45,7 @@ static const int nssigs[] = {
     SIGTERM,
     SIGTTIN,
     SIGTTOU,
+    // clang-format on
 };
 
 struct pids_t {

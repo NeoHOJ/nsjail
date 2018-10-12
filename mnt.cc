@@ -61,6 +61,7 @@ static const std::string flagsToStr(uintptr_t flags) {
 		const uintptr_t flag;
 		const char* const name;
 	} static const mountFlags[] = {
+	    // clang-format off
 	    NS_VALSTR_STRUCT(MS_RDONLY),
 	    NS_VALSTR_STRUCT(MS_NOSUID),
 	    NS_VALSTR_STRUCT(MS_NODEV),
@@ -85,6 +86,7 @@ static const std::string flagsToStr(uintptr_t flags) {
 	    NS_VALSTR_STRUCT(MS_I_VERSION),
 	    NS_VALSTR_STRUCT(MS_STRICTATIME),
 	    NS_VALSTR_STRUCT(MS_LAZYTIME),
+	    // clang-format on
 	};
 
 	uintptr_t knownFlagMask = 0U;
@@ -238,6 +240,7 @@ static bool remountPt(const mount_t& mpt) {
 		const unsigned long mount_flag;
 		const unsigned long vfs_flag;
 	} static const mountPairs[] = {
+	    // clang-format off
 	    {MS_NOSUID, ST_NOSUID},
 	    {MS_NODEV, ST_NODEV},
 	    {MS_NOEXEC, ST_NOEXEC},
@@ -246,6 +249,7 @@ static bool remountPt(const mount_t& mpt) {
 	    {MS_NOATIME, ST_NOATIME},
 	    {MS_NODIRATIME, ST_NODIRATIME},
 	    {MS_RELATIME, ST_RELATIME},
+	    // clang-format on
 	};
 
 	const unsigned long per_mountpoint_flags =
