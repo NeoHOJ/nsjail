@@ -41,6 +41,9 @@
 #include <time.h>
 #include <unistd.h>
 
+#include <sys/resource.h> /* for {get,set}rlimit, should move it to contain.cc? */
+#include <sys/time.h>     /* for setitimer, should move it to nsjail.cc? */
+
 #include <string>
 #include <vector>
 
@@ -127,6 +130,44 @@ static bool resetEnv(void) {
 	return true;
 }
 
+static void setRtPrioForParent() {
+	/* set the static priority based on hard ulimit */
+	struct rlimit lim = {};
+	getrlimit(RLIMIT_RTPRIO, &lim);
+	lim.rlim_cur = lim.rlim_max;
+	LOG_D("setrlimit(cur=%zd, max=%zd) on parent", lim.rlim_cur, lim.rlim_max);
+	if (setrlimit(RLIMIT_RTPRIO, &lim) < 0) {
+		PLOG_W("Failed to setrlimit() on parent");
+	}
+
+	struct sched_param param;
+	param.sched_priority = std::max(sched_get_priority_max(SCHED_FIFO), (int)lim.rlim_cur);
+
+	LOG_I("Set static priority on parent %d to %d", getpid(), param.sched_priority);
+
+	if (sched_setscheduler(0, SCHED_FIFO, &param) < 0) {
+		PLOG_W("Failed to set priority on parent. This may reduce stability");
+	}
+}
+
+static void setRtPrioForChild() {
+	struct rlimit lim = {};
+	getrlimit(RLIMIT_RTPRIO, &lim);
+	lim.rlim_cur = lim.rlim_max - 1;
+	LOG_D("setrlimit(cur=%zd, max=%zd) on pid %d", lim.rlim_cur, lim.rlim_max, getpid());
+	if (setrlimit(RLIMIT_RTPRIO, &lim) < 0) {
+		PLOG_W("Failed to setrlimit() on pid %d", getpid());
+	}
+
+	struct sched_param param;
+	param.sched_priority = std::max(sched_get_priority_max(SCHED_FIFO) - 1, (int)lim.rlim_cur);
+
+	LOG_I("Set static priority on child %d to %d", getpid(), param.sched_priority);
+	if (sched_setscheduler(0, SCHED_FIFO, &param) < 0) {
+		PLOG_W("Failed to set priority of child (%d). This may reduce stability", getpid());
+	}
+}
+
 static const char kSubprocDoneChar = 'D';
 static const char kSubprocErrorChar = 'E';
 
@@ -137,6 +178,8 @@ static void subprocNewProc(nsjconf_t* nsjconf, int fd_in, int fd_out, int fd_err
 	if (!resetEnv()) {
 		return;
 	}
+
+	setRtPrioForChild();
 
 	if (pipefd == -1) {
 		if (!user::initNsFromParent(nsjconf, getpid())) {
@@ -294,6 +337,21 @@ static int reapProc(nsjconf_t* nsjconf, pid_t pid, bool should_wait = false) {
 	int status;
 
 	if (wait4(pid, &status, should_wait ? 0 : WNOHANG, NULL) == pid) {
+		struct timespec timespec_cur = {};
+		uint64_t now_in_ms = 0;
+
+		if (clock_gettime(CLOCK_MONOTONIC_RAW, &timespec_cur) < 0) {
+			LOG_W(
+			    "Failed to get process end time for pid %d. The time report will be "
+			    "unreliable.",
+			    pid);
+		} else {
+			now_in_ms = util::timespecToMiliseconds(&timespec_cur);
+			LOG_D("Record process end time: (%zd, %zd)", timespec_cur.tv_sec,
+			    timespec_cur.tv_nsec);
+		}
+
+		cgroup::printStat(nsjconf, pid);
 		cgroup::finishFromParent(nsjconf, pid);
 
 		std::string remote_txt = "[UNKNOWN]";
@@ -302,9 +360,18 @@ static int reapProc(nsjconf_t* nsjconf, pid_t pid, bool should_wait = false) {
 			remote_txt = elem->remote_txt;
 		}
 
+		uint64_t time_alive = (uint64_t)-1LL;
+		if (elem->start_accu != 0LL && now_in_ms != 0LL) {
+			time_alive = now_in_ms - elem->start_accu;
+		}
+
+		LOG_STAT("%d:time = %" PRId64, pid, time_alive);
+
 		if (WIFEXITED(status)) {
 			LOG_I("PID: %d (%s) exited with status: %d, (PIDs left: %d)", pid,
 			    remote_txt.c_str(), WEXITSTATUS(status), countProc(nsjconf) - 1);
+			LOG_STAT("%d:exit_normally = true", pid);
+			LOG_STAT("%d:exit_code = %d", pid, WEXITSTATUS(status));
 			removeProc(nsjconf, pid);
 			return WEXITSTATUS(status);
 		}
@@ -312,6 +379,8 @@ static int reapProc(nsjconf_t* nsjconf, pid_t pid, bool should_wait = false) {
 			LOG_I("PID: %d (%s) terminated with signal: %s (%d), (PIDs left: %d)", pid,
 			    remote_txt.c_str(), util::sigName(WTERMSIG(status)).c_str(),
 			    WTERMSIG(status), countProc(nsjconf) - 1);
+			LOG_STAT("%d:exit_normally = false", pid);
+			LOG_STAT("%d:exit_code = %d", pid, WTERMSIG(status));
 			removeProc(nsjconf, pid);
 			return 128 + WTERMSIG(status);
 		}
@@ -337,14 +406,22 @@ int reapProc(nsjconf_t* nsjconf) {
 		rv = reapProc(nsjconf, si.si_pid);
 	}
 
-	time_t now = time(NULL);
+	// time_t now = time(NULL);
+	struct timespec now;
+	if (clock_gettime(CLOCK_MONOTONIC_RAW, &now) < 0) {
+		LOG_F("Failed to get current time");
+		return 0xff;
+	}
+
 	for (const auto& p : nsjconf->pids) {
 		if (nsjconf->tlimit == 0) {
 			continue;
 		}
 		pid_t pid = p.pid;
-		time_t diff = now - p.start;
-		if ((uint64_t)diff >= nsjconf->tlimit) {
+		// time_t diff = now - p.start;
+		uint64_t diff = util::timespecToMiliseconds(&now) - p.start_accu;
+		// if ((uint64_t)diff >= nsjconf->tlimit) {
+		if (diff >= (uint64_t)nsjconf->tlimit * 1000UL) {
 			LOG_I("PID: %d run time >= time limit (%ld >= %" PRIu64
 			      ") (%s). Killing it",
 			    pid, (long)diff, nsjconf->tlimit, p.remote_txt.c_str());
@@ -425,6 +502,9 @@ bool runChild(nsjconf_t* nsjconf, int fd_in, int fd_out, int fd_err) {
 	int child_fd = sv[0];
 	int parent_fd = sv[1];
 
+	/* set parent rtptio just before doing clone() */
+	setRtPrioForParent();
+
 	pid_t pid = cloneProc(flags);
 	if (pid == 0) {
 		close(parent_fd);
@@ -459,6 +539,34 @@ bool runChild(nsjconf_t* nsjconf, int fd_in, int fd_out, int fd_err) {
 	if (util::readFromFd(parent_fd, &rcvChar, sizeof(rcvChar)) == sizeof(rcvChar) &&
 	    rcvChar == kSubprocErrorChar) {
 		LOG_W("Received error message from the child process before it has been executed");
+		close(parent_fd);
+		return false;
+	}
+
+	/* start timer once child is ready (since fd is closed AFTER execv/execvat) */
+	pids_t* elem = const_cast<pids_t*>(getPidElem(nsjconf, pid));
+	struct timespec start_accu = {};
+	if (clock_gettime(CLOCK_MONOTONIC_RAW, &start_accu) < 0) {
+		LOG_W(
+		    "Failed to get process start time for pid %d. The time report will be "
+		    "unreliable",
+		    pid);
+		elem->start_accu = 0LL;
+	} else {
+		elem->start_accu = util::timespecToMiliseconds(&start_accu);
+		LOG_D(
+		    "Record process start time (%zd, %zd)", start_accu.tv_sec, start_accu.tv_nsec);
+	}
+
+	/* re-arm the timer to set the real time limit */
+	struct itimerval it = {
+	    // clang-format off
+	    .it_interval = {.tv_sec = 1, .tv_usec = 0},
+	    .it_value = {.tv_sec = 1, .tv_usec = 0},
+	    // clang-format on
+	};
+	if (setitimer(ITIMER_REAL, &it, NULL) == -1) {
+		PLOG_E("setitimer(ITIMER_REAL)");
 		close(parent_fd);
 		return false;
 	}

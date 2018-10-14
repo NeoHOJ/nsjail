@@ -49,6 +49,10 @@
 
 namespace util {
 
+unsigned long int timespecToMiliseconds(struct timespec const* ts) {
+	return ts->tv_sec * 1000u + ts->tv_nsec / 1000000;
+}
+
 ssize_t readFromFd(int fd, void* buf, size_t len) {
 	uint8_t* charbuf = (uint8_t*)buf;
 

@@ -40,6 +40,7 @@
 
 namespace util {
 
+unsigned long int timespecToMiliseconds(struct timespec const* ts);
 ssize_t readFromFd(int fd, void* buf, size_t len);
 ssize_t readFromFile(const char* fname, void* buf, size_t len);
 ssize_t writeToFd(int fd, const void* buf, size_t len);

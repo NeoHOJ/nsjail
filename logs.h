@@ -33,6 +33,8 @@ namespace logs {
 #define LOG_HELP_BOLD(...) \
 	logs::logMsg(logs::HELP_BOLD, __PRETTY_FUNCTION__, __LINE__, false, __VA_ARGS__);
 
+#define LOG_STAT(...) logs::logMsg(logs::STAT, "__STAT__", 0, false, __VA_ARGS__);
+
 #define LOG_D(...) logs::logMsg(logs::DEBUG, __PRETTY_FUNCTION__, __LINE__, false, __VA_ARGS__);
 #define LOG_I(...) logs::logMsg(logs::INFO, __PRETTY_FUNCTION__, __LINE__, false, __VA_ARGS__);
 #define LOG_W(...) logs::logMsg(logs::WARNING, __PRETTY_FUNCTION__, __LINE__, false, __VA_ARGS__);
@@ -51,6 +53,7 @@ enum llevel_t {
 	WARNING,
 	ERROR,
 	FATAL,
+	STAT,
 	HELP,
 	HELP_BOLD,
 };
