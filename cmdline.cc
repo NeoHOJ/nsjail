@@ -86,7 +86,7 @@ struct custom_option custom_opts[] = {
     { { "max_conns_per_ip", required_argument, NULL, 'i' }, "Maximum number of connections per one IP (only in [MODE_LISTEN_TCP]), (default: 0 (unlimited))" },
     { { "log", required_argument, NULL, 'l' }, "Log file (default: use log_fd)" },
     { { "log_fd", required_argument, NULL, 'L' }, "Log FD (default: 2)" },
-    { { "time_limit", required_argument, NULL, 't' }, "Maximum time that a jail can exist, in seconds (default: 600)" },
+    { { "time_limit", required_argument, NULL, 't' }, "Maximum time that a jail can exist, in seconds (default: 0)" },
     { { "max_cpus", required_argument, NULL, 0x508 }, "Maximum number of CPUs a single jailed process can use (default: 0 'no limit')" },
     { { "daemon", no_argument, NULL, 'd' }, "Daemonize after start" },
     { { "verbose", no_argument, NULL, 'v' }, "Verbose output" },

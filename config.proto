@@ -98,7 +98,7 @@ message NsJailConfig {
     optional uint32 max_conns_per_ip = 12 [default = 0];
 
     /* Wall-time time limit for commands */
-    optional uint32 time_limit = 13 [default = 600];
+    optional uint32 time_limit = 13 [default = 0];
     /* Should nsjail go into background? */
     optional bool daemon = 14 [default = false];
     /* Maximum number of CPUs to use: 0 - no limit */
@@ -196,7 +196,7 @@ message NsJailConfig {
     optional bool seccomp_log = 77 [default = false];
 
     /* If > 0, maximum cumulative size of RAM used inside any jail */
-    optional uint64 cgroup_mem_max = 59 [default = 0]; /* In MiB */
+    optional uint64 cgroup_mem_max = 59 [default = 0]; /* In bytes */
     /* Mount point for cgroups-memory in your system */
     optional string cgroup_mem_mount = 60 [default = "/sys/fs/cgroup/memory"];
     /* Writeable directory (for the nsjail user) under cgroup_mem_mount */

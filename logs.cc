@@ -119,7 +119,7 @@ void logMsg(enum llevel_t ll, const char* fn, int ln, bool perr, const char* fmt
 		dprintf(_log_fd, "[%s] ", timestr.c_str());
 	}
 	if (logLevels[ll].print_funcline) {
-		dprintf(_log_fd, "[%s][%d] %s():%d ", logLevels[ll].descr, (int)getpid(), fn, ln);
+		dprintf(_log_fd, "[%s][%d] %s:%d ", logLevels[ll].descr, (int)getpid(), fn, ln);
 	}
 
 	va_list args;
