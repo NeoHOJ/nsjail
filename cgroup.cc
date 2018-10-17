@@ -63,7 +63,7 @@ static bool readIntFromCgroup(
     const std::string& cgroup_path, long long int* ptr, const std::string& what) {
 	const int ndigits = 24; /* max of sint64 is about 9.2e18 */
 	char buf[ndigits];
-	if (!util::readFromFile(cgroup_path.c_str(), buf, ndigits)) {
+	if (util::readFromFile(cgroup_path.c_str(), buf, ndigits) < 0) {
 		LOG_W("Could not read %s from %s", what.c_str(), cgroup_path.c_str());
 		return false;
 	}
@@ -208,6 +208,10 @@ void finishFromParent(nsjconf_t* nsjconf, pid_t pid) {
 }
 
 void printStat(nsjconf_t* nsjconf, pid_t pid) {
+	if (nsjconf->cgroup_mem_max == (size_t)0) {
+		return;
+	}
+
 	std::string mem_cgroup_base = nsjconf->cgroup_mem_mount + '/' + nsjconf->cgroup_mem_parent +
 				      "/NSJAIL." + std::to_string(pid);
 
