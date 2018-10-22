@@ -144,27 +144,26 @@ static void setRtPrioForParent() {
 	param.sched_priority = std::max(sched_get_priority_max(SCHED_FIFO), (int)lim.rlim_cur);
 
 	LOG_I("Set static priority on parent %d to %d", getpid(), param.sched_priority);
-
 	if (sched_setscheduler(0, SCHED_FIFO, &param) < 0) {
 		PLOG_W("Failed to set priority on parent. This may reduce stability");
 	}
 }
 
-static void setRtPrioForChild() {
+static void setRtPrioForChild(pid_t pid) {
 	struct rlimit lim = {};
 	getrlimit(RLIMIT_RTPRIO, &lim);
 	lim.rlim_cur = lim.rlim_max - 1;
-	LOG_D("setrlimit(cur=%zd, max=%zd) on pid %d", lim.rlim_cur, lim.rlim_max, getpid());
+	LOG_D("setrlimit(cur=%zd, max=%zd) on pid %d", lim.rlim_cur, lim.rlim_max, pid);
 	if (setrlimit(RLIMIT_RTPRIO, &lim) < 0) {
-		PLOG_W("Failed to setrlimit() on pid %d", getpid());
+		PLOG_W("Failed to setrlimit() on pid %d", pid);
 	}
 
 	struct sched_param param;
 	param.sched_priority = std::max(sched_get_priority_max(SCHED_FIFO) - 1, (int)lim.rlim_cur);
 
-	LOG_I("Set static priority on child %d to %d", getpid(), param.sched_priority);
-	if (sched_setscheduler(0, SCHED_FIFO, &param) < 0) {
-		PLOG_W("Failed to set priority of child (%d). This may reduce stability", getpid());
+	LOG_I("Set static priority on child %d to %d", pid, param.sched_priority);
+	if (sched_setscheduler(pid, SCHED_FIFO, &param) < 0) {
+		PLOG_W("Failed to set priority of child (%d). This may reduce stability", pid);
 	}
 }
 
@@ -178,8 +177,6 @@ static void subprocNewProc(nsjconf_t* nsjconf, int fd_in, int fd_out, int fd_err
 	if (!resetEnv()) {
 		return;
 	}
-
-	setRtPrioForChild();
 
 	if (pipefd == -1) {
 		if (!user::initNsFromParent(nsjconf, getpid())) {
@@ -422,9 +419,9 @@ int reapProc(nsjconf_t* nsjconf) {
 		uint64_t diff = util::timespecToMiliseconds(&now) - p.start_accu;
 		// if ((uint64_t)diff >= nsjconf->tlimit) {
 		if (diff >= (uint64_t)nsjconf->tlimit * 1000UL) {
-			LOG_I("PID: %d run time >= time limit (%ld >= %" PRIu64
+			LOG_I("PID: %d run time >= time limit (%" PRIu64 " >= %" PRIu64
 			      ") (%s). Killing it",
-			    pid, (long)diff, nsjconf->tlimit, p.remote_txt.c_str());
+			    pid, diff, nsjconf->tlimit * 1000UL, p.remote_txt.c_str());
 			/*
 			 * Probably a kernel bug - some processes cannot be killed with KILL if
 			 * they're namespaced, and in a stopped state
@@ -529,6 +526,7 @@ bool runChild(nsjconf_t* nsjconf, int fd_in, int fd_out, int fd_err) {
 		return false;
 	}
 	addProc(nsjconf, pid, fd_in);
+	setRtPrioForChild(pid);
 
 	if (!initParent(nsjconf, pid, parent_fd)) {
 		close(parent_fd);

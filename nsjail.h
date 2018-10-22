@@ -35,6 +35,9 @@
 #include <string>
 #include <vector>
 
+#define PROGRAM_NAME "nsjail for HOJ"
+#define VERSION_STRING "v2.7-1bb5808-hoj-1.0-alpha.1.dev"
+
 static const int nssigs[] = {
     // clang-format off
     SIGINT,

@@ -208,6 +208,8 @@ int main(int argc, char* argv[]) {
 	if (nsjconf->daemonize && (daemon(0, 0) == -1)) {
 		PLOG_F("daemon");
 	}
+	LOG_STAT("info = '" PROGRAM_NAME ": " VERSION_STRING "'");
+
 	cmdline::logParams(nsjconf.get());
 	if (!nsjail::setSigHandlers()) {
 		LOG_F("nsjail::setSigHandlers() failed");
