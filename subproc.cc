@@ -41,7 +41,8 @@
 #include <time.h>
 #include <unistd.h>
 
-#include <sys/resource.h> /* for {get,set}rlimit, should move it to contain.cc? */
+#include <sys/prctl.h>    /* for dumpable flag */
+#include <sys/resource.h> /* for {get,set}rlimit */
 #include <sys/time.h>     /* for setitimer, should move it to nsjail.cc? */
 
 #include <string>
@@ -130,41 +131,27 @@ static bool resetEnv(void) {
 	return true;
 }
 
-static void setRtPrioForParent() {
+static int raiseRtPrioToMax() {
 	/* set the static priority based on hard ulimit */
-	struct rlimit lim = {};
-	getrlimit(RLIMIT_RTPRIO, &lim);
+	struct rlimit lim;
+	if (getrlimit(RLIMIT_RTPRIO, &lim) < 0) {
+		PLOG_W("Failed to get rlimit for parent");
+		return -1;
+	}
+
+	if (lim.rlim_max == 0) {
+		PLOG_W("Setting real-time priority requies non-zero rrptio hard limit");
+		return -1;
+	}
+
 	lim.rlim_cur = lim.rlim_max;
 	LOG_D("setrlimit(cur=%zd, max=%zd) on parent", lim.rlim_cur, lim.rlim_max);
 	if (setrlimit(RLIMIT_RTPRIO, &lim) < 0) {
 		PLOG_W("Failed to setrlimit() on parent");
+		return -1;
 	}
 
-	struct sched_param param;
-	param.sched_priority = std::max(sched_get_priority_max(SCHED_FIFO), (int)lim.rlim_cur);
-
-	LOG_I("Set static priority on parent %d to %d", getpid(), param.sched_priority);
-	if (sched_setscheduler(0, SCHED_FIFO, &param) < 0) {
-		PLOG_W("Failed to set priority on parent. This may reduce stability");
-	}
-}
-
-static void setRtPrioForChild(pid_t pid) {
-	struct rlimit lim = {};
-	getrlimit(RLIMIT_RTPRIO, &lim);
-	lim.rlim_cur = lim.rlim_max - 1;
-	LOG_D("setrlimit(cur=%zd, max=%zd) on pid %d", lim.rlim_cur, lim.rlim_max, pid);
-	if (setrlimit(RLIMIT_RTPRIO, &lim) < 0) {
-		PLOG_W("Failed to setrlimit() on pid %d", pid);
-	}
-
-	struct sched_param param;
-	param.sched_priority = std::max(sched_get_priority_max(SCHED_FIFO) - 1, (int)lim.rlim_cur);
-
-	LOG_I("Set static priority on child %d to %d", pid, param.sched_priority);
-	if (sched_setscheduler(pid, SCHED_FIFO, &param) < 0) {
-		PLOG_W("Failed to set priority of child (%d). This may reduce stability", pid);
-	}
+	return std::max(sched_get_priority_max(SCHED_FIFO), (int)lim.rlim_cur);
 }
 
 static const char kSubprocDoneChar = 'D';
@@ -480,6 +467,10 @@ bool runChild(nsjconf_t* nsjconf, int fd_in, int fd_out, int fd_err) {
 	flags |= (nsjconf->clone_newuts ? CLONE_NEWUTS : 0);
 	flags |= (nsjconf->clone_newcgroup ? CLONE_NEWCGROUP : 0);
 
+	if (prctl(PR_SET_DUMPABLE, 1UL, 0UL, 0UL, 0UL) < 0) {
+		LOG_W("PR_SET_DUMPABLE(1) failed");
+	}
+
 	if (nsjconf->mode == MODE_STANDALONE_EXECVE) {
 		if (unshare(flags) == -1) {
 			PLOG_F("unshare(%s)", cloneFlagsToStr(flags).c_str());
@@ -499,8 +490,22 @@ bool runChild(nsjconf_t* nsjconf, int fd_in, int fd_out, int fd_err) {
 	int child_fd = sv[0];
 	int parent_fd = sv[1];
 
-	/* set parent rtptio just before doing clone() */
-	setRtPrioForParent();
+	/* set parent rtprio just before doing clone().
+	   this operation is optional.
+	 */
+	int rtprio = raiseRtPrioToMax();
+
+	if (rtprio > 0) {
+		struct sched_param param;
+		param.sched_priority = rtprio;
+
+		if (sched_setscheduler(0, SCHED_FIFO, &param) < 0) {
+			PLOG_W("Failed to set real-time scheduler. THis may reduce stability");
+		} else {
+			LOG_I("Set real-time priority on parent %d to %d", getpid(),
+			    param.sched_priority);
+		}
+	}
 
 	pid_t pid = cloneProc(flags);
 	if (pid == 0) {
@@ -526,7 +531,22 @@ bool runChild(nsjconf_t* nsjconf, int fd_in, int fd_out, int fd_err) {
 		return false;
 	}
 	addProc(nsjconf, pid, fd_in);
-	setRtPrioForChild(pid);
+
+	/* if parent fails to set this option, then skip setting for the child */
+	if (rtprio > 0) {
+		struct sched_param param;
+		param.sched_priority = rtprio - 1;
+
+		if (sched_setscheduler(pid, SCHED_FIFO, &param) < 0) {
+			PLOG_W(
+			    "Failed to set real-time scheduler of child (%d). This may reduce "
+			    "stability",
+			    pid);
+		} else {
+			LOG_I(
+			    "Set real-time priority on child %d to %d", pid, param.sched_priority);
+		}
+	}
 
 	if (!initParent(nsjconf, pid, parent_fd)) {
 		close(parent_fd);
