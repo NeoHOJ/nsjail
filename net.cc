@@ -74,6 +74,17 @@ static bool cloneIface(
 	rtnl_link_set_link(rmv, master_index);
 	rtnl_link_set_ns_pid(rmv, pid);
 
+	if (nsjconf->iface_vs_ma != "") {
+		struct nl_addr* nladdr = nullptr;
+		if ((err = nl_addr_parse(nsjconf->iface_vs_ma.c_str(), AF_LLC, &nladdr)) < 0) {
+			LOG_E("nl_addr_parse('%s', AF_LLC) failed: %s",
+			    nsjconf->iface_vs_ma.c_str(), nl_geterror(err));
+			return false;
+		}
+		rtnl_link_set_addr(rmv, nladdr);
+		nl_addr_put(nladdr);
+	}
+
 	if ((err = rtnl_link_add(sk, rmv, NLM_F_CREATE)) < 0) {
 		LOG_E("rtnl_link_add(name:'%s' link:'%s'): %s", IFACE_NAME,
 		    nsjconf->iface_vs.c_str(), nl_geterror(err));
@@ -187,13 +198,20 @@ bool initNsFromParent(nsjconf_t* nsjconf, int pid) {
 	LOG_D("Putting iface:'%s' into namespace of PID:%d (with /sbin/ip)",
 	    nsjconf->iface_vs.c_str(), pid);
 
-	const std::vector<std::string> argv{"/sbin/ip", "link", "add", "link", nsjconf->iface_vs,
-	    "name", IFACE_NAME, "netns", std::to_string(pid), "type", "macvlan", "mode", "bridge"};
+	std::vector<std::string> argv;
+
+	if (nsjconf->iface_vs_ma != "") {
+		argv = {"/sbin/ip", "link", "add", "link", nsjconf->iface_vs, "name", IFACE_NAME,
+		    "netns", std::to_string(pid), "address", nsjconf->iface_vs_ma, "type",
+		    "macvlan", "mode", "bridge"};
+	} else {
+		argv = {"/sbin/ip", "link", "add", "link", nsjconf->iface_vs, "name", IFACE_NAME,
+		    "netns", std::to_string(pid), "type", "macvlan", "mode", "bridge"};
+	}
 	if (subproc::systemExe(argv, environ) != 0) {
 		LOG_E("Couldn't create MACVTAP interface for '%s'", nsjconf->iface_vs.c_str());
 		return false;
 	}
-
 	return true;
 }
 #endif  // defined(NSJAIL_NL3_WITH_MACVLAN)

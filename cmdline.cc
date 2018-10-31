@@ -93,7 +93,7 @@ struct custom_option custom_opts[] = {
     { { "quiet", no_argument, NULL, 'q' }, "Log warning and more important messages only" },
     { { "really_quiet", no_argument, NULL, 'Q' }, "Log fatal messages only" },
     { { "keep_env", no_argument, NULL, 'e' }, "Pass all environment variables to the child process (default: all envvars are cleared)" },
-    { { "env", required_argument, NULL, 'E' }, "Additional environment variable (can be used multiple times)" },
+    { { "env", required_argument, NULL, 'E' }, "Additional environment variable (can be used multiple times). If the envvar doesn't contain '=' (e.g. just the 'DISPLAY' string), the current envvar value will be used" },
     { { "keep_caps", no_argument, NULL, 0x0501 }, "Don't drop any capabilities" },
     { { "cap", required_argument, NULL, 0x0509 }, "Retain this capability, e.g. CAP_PTRACE (can be specified multiple times)" },
     { { "silent", no_argument, NULL, 0x0502 }, "Redirect child process' fd:0/1/2 to /dev/null" },
@@ -151,6 +151,7 @@ struct custom_option custom_opts[] = {
     { { "macvlan_vs_ip", required_argument, NULL, 0x701 }, "IP of the 'vs' interface (e.g. \"192.168.0.1\")" },
     { { "macvlan_vs_nm", required_argument, NULL, 0x702 }, "Netmask of the 'vs' interface (e.g. \"255.255.255.0\")" },
     { { "macvlan_vs_gw", required_argument, NULL, 0x703 }, "Default GW for the 'vs' interface (e.g. \"192.168.0.1\")" },
+    { { "macvlan_vs_ma", required_argument, NULL, 0x705 }, "MAC-address of the 'vs' interface (e.g. \"ba:ad:ba:be:45:00\")" },
 };
 // clang-format on
 
@@ -184,6 +185,20 @@ static void cmdlineUsage(const char* pname) {
 	LOG_HELP_BOLD("  nsjail -Mo --chroot / -- /bin/echo \"ABC\"");
 	LOG_HELP(" Execute echo command directly, without a supervising process");
 	LOG_HELP_BOLD("  nsjail -Me --chroot / --disable_proc -- /bin/echo \"ABC\"");
+}
+
+void addEnv(nsjconf_t* nsjconf, const std::string& env) {
+	if (env.find('=') != std::string::npos) {
+		nsjconf->envs.push_back(env);
+		return;
+	}
+	char* e = getenv(env.c_str());
+	if (!e) {
+		LOG_W("Requested to use the '%s' envvar, but it's not set. It'll be ignored",
+		    env.c_str());
+		return;
+	}
+	nsjconf->envs.push_back(std::string(env).append("=").append(e));
 }
 
 void logParams(nsjconf_t* nsjconf) {
@@ -417,6 +432,7 @@ std::unique_ptr<nsjconf_t> parseArgs(int argc, char* argv[]) {
 	nsjconf->iface_vs_ip = "0.0.0.0";
 	nsjconf->iface_vs_nm = "255.255.255.0";
 	nsjconf->iface_vs_gw = "0.0.0.0";
+	nsjconf->iface_vs_ma = "";
 	nsjconf->orig_uid = getuid();
 	nsjconf->num_cpus = sysconf(_SC_NPROCESSORS_ONLN);
 	nsjconf->seccomp_fprog.filter = NULL;
@@ -604,7 +620,7 @@ std::unique_ptr<nsjconf_t> parseArgs(int argc, char* argv[]) {
 			nsjconf->use_execveat = true;
 			break;
 		case 'E':
-			nsjconf->envs.push_back(optarg);
+			addEnv(nsjconf.get(), optarg);
 			break;
 		case 'u': {
 			std::vector<std::string> subopts = util::strSplit(optarg, ':');
@@ -759,6 +775,9 @@ std::unique_ptr<nsjconf_t> parseArgs(int argc, char* argv[]) {
 			break;
 		case 0x704:
 			nsjconf->ifaces.push_back(optarg);
+			break;
+		case 0x705:
+			nsjconf->iface_vs_ma = optarg;
 			break;
 		case 0x801:
 			nsjconf->cgroup_mem_max = (size_t)strtoull(optarg, NULL, 0);

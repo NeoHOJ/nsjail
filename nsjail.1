@@ -92,7 +92,7 @@ Log fatal messages only
 Pass all environment variables be passed process (default: all envvars are cleared)
 .TP
 \fB\-\-env\fR|\fB\-E\fR VALUE
-Additional environment variable (can be used multiple times)
+Additional environment variable (can be used multiple times). If the envvar doesn't contain '=' (e.g. just the 'DISPLAY' string), the current envvar value will be used
 .TP
 \fB\-\-keep_caps\fR
 Don't drop any capabilities
@@ -264,6 +264,9 @@ Netmask of the 'vs' interface (e.g. "255.255.255.0")
 .TP
 \fB\-\-macvlan_vs_gw\fR VALUE
 Default GW for the 'vs' interface (e.g. "192.168.0.1")
+.TP
+\fB\-\-macvlan_vs_ma\fR VALUE
+MAC-address of the 'vs' interface (e.g. "ba:ad:ba:be:45:00")
 \"
 .SH Examples
 .PP

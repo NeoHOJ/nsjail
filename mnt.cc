@@ -92,16 +92,16 @@ static const std::string flagsToStr(uintptr_t flags) {
 	uintptr_t knownFlagMask = 0U;
 	for (const auto& i : mountFlags) {
 		if (flags & i.flag) {
+			if (!res.empty()) {
+				res.append("|");
+			}
 			res.append(i.name);
-			res.append("|");
 		}
 		knownFlagMask |= i.flag;
 	}
 
-	if (((flags & ~(knownFlagMask)) == 0) && !res.empty()) {
-		res.pop_back();
-	} else {
-		util::StrAppend(&res, "%#tx", flags & ~(knownFlagMask));
+	if (flags & ~(knownFlagMask)) {
+		util::StrAppend(&res, "|%#tx", flags & ~(knownFlagMask));
 	}
 
 	return res;
@@ -543,13 +543,13 @@ bool addMountPtTail(nsjconf_t* nsjconf, const std::string& src, const std::strin
 const std::string describeMountPt(const mount_t& mpt) {
 	std::string descr;
 
-	descr.append("src:'")
-	    .append(mpt.src)
-	    .append("' dst:'")
+	descr.append("'")
+	    .append(mpt.src.empty() ? "" : mpt.src)
+	    .append(mpt.src.empty() ? "" : "' -> '")
 	    .append(mpt.dst)
-	    .append("' flags:'")
+	    .append("' flags:")
 	    .append(flagsToStr(mpt.flags))
-	    .append("' type:'")
+	    .append(" type:'")
 	    .append(mpt.fs_type)
 	    .append("' options:'")
 	    .append(mpt.options)
