@@ -140,7 +140,7 @@ static int raiseRtPrioToMax() {
 	}
 
 	if (lim.rlim_max == 0) {
-		PLOG_W("Setting real-time priority requies non-zero rrptio hard limit");
+		LOG_W("Setting real-time priority requires non-zero rtprio hard limit");
 		return -1;
 	}
 
