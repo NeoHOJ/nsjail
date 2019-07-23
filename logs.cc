@@ -38,8 +38,6 @@
 #include "macros.h"
 #include "util.h"
 
-#include <string.h>
-
 namespace logs {
 
 static int _log_fd = STDERR_FILENO;
@@ -92,13 +90,12 @@ void logMsg(enum llevel_t ll, const char* fn, int ln, bool perr, const char* fmt
 	if (perr) {
 		snprintf(strerr, sizeof(strerr), "%s", strerror(errno));
 	}
-	struct ll_t {
+	struct {
 		const char* const descr;
 		const char* const prefix;
 		const bool print_funcline;
 		const bool print_time;
-	};
-	static struct ll_t const logLevels[] = {
+	} static const logLevels[] = {
 	    {"D", "\033[0;4m", true, true},
 	    {"I", "\033[1m", false, true},
 	    {"W", "\033[0;33m", true, true},
@@ -109,29 +106,48 @@ void logMsg(enum llevel_t ll, const char* fn, int ln, bool perr, const char* fmt
 	};
 
 	/* Start printing logs */
+	std::string msg;
 	if (_log_fd_isatty) {
-		dprintf(_log_fd, "%s", logLevels[ll].prefix);
+		msg.append(logLevels[ll].prefix);
+	}
+	if (ll != HELP && ll != HELP_BOLD) {
+		msg.append("[").append(logLevels[ll].descr).append("]");
 	}
 	if (logLevels[ll].print_time) {
-		const auto timestr = util::timeToStr(time(NULL));
-		dprintf(_log_fd, "[%s] ", timestr.c_str());
+		msg.append("[").append(util::timeToStr(time(NULL))).append("]");
 	}
 	if (logLevels[ll].print_funcline) {
-		dprintf(_log_fd, "[%s][%d] %s():%d ", logLevels[ll].descr, (int)getpid(), fn, ln);
+		msg.append("[")
+		    .append(std::to_string(getpid()))
+		    .append("] ")
+		    .append(fn)
+		    .append("():")
+		    .append(std::to_string(ln));
 	}
 
+	char* strp;
 	va_list args;
 	va_start(args, fmt);
-	vdprintf(_log_fd, fmt, args);
+	int ret = vasprintf(&strp, fmt, args);
 	va_end(args);
+	if (ret == -1) {
+		msg.append(" [logs internal]: MEMORY ALLOCATION ERROR");
+	} else {
+		msg.append(" ").append(strp);
+		free(strp);
+	}
 	if (perr) {
-		dprintf(_log_fd, ": %s", strerr);
+		msg.append(": ").append(strerr);
 	}
 	if (_log_fd_isatty) {
-		dprintf(_log_fd, "\033[0m");
+		msg.append("\033[0m");
 	}
-	dprintf(_log_fd, "\n");
+	msg.append("\n");
 	/* End printing logs */
+
+	if (write(_log_fd, msg.c_str(), msg.size()) == -1) {
+		dprintf(_log_fd, "%s", msg.c_str());
+	}
 
 	if (ll == FATAL) {
 		exit(0xff);

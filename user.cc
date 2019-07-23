@@ -48,12 +48,12 @@ namespace user {
 static bool setResGid(gid_t gid) {
 	LOG_D("setresgid(%d)", gid);
 #if defined(__NR_setresgid32)
-	if (syscall(__NR_setresgid32, (uintptr_t)gid, (uintptr_t)gid, (uintptr_t)gid) == -1) {
+	if (util::syscall(__NR_setresgid32, (uintptr_t)gid, (uintptr_t)gid, (uintptr_t)gid) == -1) {
 		PLOG_W("setresgid32(%d)", (int)gid);
 		return false;
 	}
 #else  /* defined(__NR_setresgid32) */
-	if (syscall(__NR_setresgid, (uintptr_t)gid, (uintptr_t)gid, (uintptr_t)gid) == -1) {
+	if (util::syscall(__NR_setresgid, (uintptr_t)gid, (uintptr_t)gid, (uintptr_t)gid) == -1) {
 		PLOG_W("setresgid(%d)", gid);
 		return false;
 	}
@@ -64,12 +64,12 @@ static bool setResGid(gid_t gid) {
 static bool setResUid(uid_t uid) {
 	LOG_D("setresuid(%d)", uid);
 #if defined(__NR_setresuid32)
-	if (syscall(__NR_setresuid32, (uintptr_t)uid, (uintptr_t)uid, (uintptr_t)uid) == -1) {
+	if (util::syscall(__NR_setresuid32, (uintptr_t)uid, (uintptr_t)uid, (uintptr_t)uid) == -1) {
 		PLOG_W("setresuid32(%d)", (int)uid);
 		return false;
 	}
 #else  /* defined(__NR_setresuid32) */
-	if (syscall(__NR_setresuid, (uintptr_t)uid, (uintptr_t)uid, (uintptr_t)uid) == -1) {
+	if (util::syscall(__NR_setresuid, (uintptr_t)uid, (uintptr_t)uid, (uintptr_t)uid) == -1) {
 		PLOG_W("setresuid(%d)", uid);
 		return false;
 	}
@@ -77,18 +77,18 @@ static bool setResUid(uid_t uid) {
 	return true;
 }
 
-static bool setGroups(pid_t pid) {
+static bool setGroupsDeny(nsjconf_t* nsjconf, pid_t pid) {
 	/*
 	 * No need to write 'deny' to /proc/pid/setgroups if our euid==0, as writing to
 	 * uid_map/gid_map will succeed anyway
 	 */
-	if (geteuid() == 0) {
+	if (!nsjconf->clone_newuser || nsjconf->orig_euid == 0) {
 		return true;
 	}
 
 	char fname[PATH_MAX];
 	snprintf(fname, sizeof(fname), "/proc/%d/setgroups", pid);
-	const char* denystr = "deny";
+	const char* const denystr = "deny";
 	if (!util::writeBufToFile(fname, denystr, strlen(denystr), O_WRONLY | O_CLOEXEC)) {
 		LOG_E("util::writeBufToFile('%s', '%s') failed", fname, denystr);
 		return false;
@@ -205,23 +205,16 @@ static bool uidMapExternal(nsjconf_t* nsjconf, pid_t pid UNUSED) {
 }
 
 static bool uidGidMap(nsjconf_t* nsjconf, pid_t pid) {
-	if (!gidMapSelf(nsjconf, pid)) {
-		return false;
-	}
-	if (!gidMapExternal(nsjconf, pid)) {
-		return false;
-	}
-	if (!uidMapSelf(nsjconf, pid)) {
-		return false;
-	}
-	if (!uidMapExternal(nsjconf, pid)) {
-		return false;
-	}
+	RETURN_ON_FAILURE(gidMapSelf(nsjconf, pid));
+	RETURN_ON_FAILURE(gidMapExternal(nsjconf, pid));
+	RETURN_ON_FAILURE(uidMapSelf(nsjconf, pid));
+	RETURN_ON_FAILURE(uidMapExternal(nsjconf, pid));
+
 	return true;
 }
 
 bool initNsFromParent(nsjconf_t* nsjconf, pid_t pid) {
-	if (!setGroups(pid)) {
+	if (!setGroupsDeny(nsjconf, pid)) {
 		return false;
 	}
 	if (!nsjconf->clone_newuser) {
@@ -234,13 +227,8 @@ bool initNsFromParent(nsjconf_t* nsjconf, pid_t pid) {
 }
 
 bool initNsFromChild(nsjconf_t* nsjconf) {
-	/*
-	 * Best effort because of /proc/self/setgroups
-	 */
-	LOG_D("setgroups(0, NULL)");
-	const gid_t* group_list = NULL;
-	if (setgroups(0, group_list) == -1) {
-		PLOG_D("setgroups(NULL) failed");
+	if (!nsjconf->clone_newuser && nsjconf->orig_euid != 0) {
+		return true;
 	}
 
 	/*
@@ -253,12 +241,48 @@ bool initNsFromChild(nsjconf_t* nsjconf) {
 		return false;
 	}
 
+	/*
+	 * Best effort because of /proc/self/setgroups. We deny
+	 * setgroups(2) calls only if user namespaces are in use.
+	 */
+	std::vector<gid_t> groups;
+	std::string groupsString = "[";
+	if (!nsjconf->clone_newuser && nsjconf->gids.size() > 1) {
+		for (auto it = nsjconf->gids.begin() + 1; it != nsjconf->gids.end(); it++) {
+			groups.push_back(it->inside_id);
+			groupsString += std::to_string(it->inside_id);
+			if (it < nsjconf->gids.end() - 1) groupsString += ", ";
+		}
+	}
+	groupsString += "]";
+
 	if (!setResGid(nsjconf->gids[0].inside_id)) {
 		PLOG_E("setresgid(%u)", nsjconf->gids[0].inside_id);
 		return false;
 	}
+
+	LOG_D("setgroups(%lu, %s)", groups.size(), groupsString.c_str());
+	if (setgroups(groups.size(), groups.data()) == -1) {
+		/* Indicate error if specific groups were requested */
+		if (groups.size() > 0) {
+			PLOG_E("setgroups(%lu, %s) failed", groups.size(), groupsString.c_str());
+			return false;
+		}
+		PLOG_D("setgroups(%lu, %s) failed", groups.size(), groupsString.c_str());
+	}
+
 	if (!setResUid(nsjconf->uids[0].inside_id)) {
 		PLOG_E("setresuid(%u)", nsjconf->uids[0].inside_id);
+		return false;
+	}
+
+	/*
+	 * Disable securebits again to avoid spawned programs
+	 * unexpectedly retaining capabilities after a UID/GID
+	 * change.
+	 */
+	if (prctl(PR_SET_SECUREBITS, 0UL, 0UL, 0UL, 0UL) == -1) {
+		PLOG_E("prctl(PR_SET_SECUREBITS, 0)");
 		return false;
 	}
 

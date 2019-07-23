@@ -19,7 +19,11 @@
 
 */
 
+#include "config.h"
+
 #include <fcntl.h>
+#include <google/protobuf/io/zero_copy_stream_impl.h>
+#include <google/protobuf/text_format.h>
 #include <stdio.h>
 #include <sys/mount.h>
 #include <sys/personality.h>
@@ -27,15 +31,12 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include <google/protobuf/io/zero_copy_stream_impl.h>
-#include <google/protobuf/text_format.h>
 #include <fstream>
 #include <string>
 #include <vector>
 
 #include "caps.h"
 #include "cmdline.h"
-#include "config.h"
 #include "config.pb.h"
 #include "logs.h"
 #include "macros.h"
@@ -125,7 +126,7 @@ static bool configParseInternal(nsjconf_t* nsjconf, const nsjail::NsJailConfig& 
 
 	nsjconf->keep_env = njc.keep_env();
 	for (ssize_t i = 0; i < njc.envar_size(); i++) {
-		nsjconf->envs.push_back(njc.envar(i));
+		cmdline::addEnv(nsjconf, njc.envar(i));
 	}
 
 	nsjconf->keep_caps = njc.keep_caps();
@@ -238,6 +239,7 @@ static bool configParseInternal(nsjconf_t* nsjconf, const nsjail::NsJailConfig& 
 		nsjconf->kafel_string += '\n';
 	}
 	nsjconf->seccomp_log = njc.seccomp_log();
+	nsjconf->nice_level = njc.nice_level();
 
 	nsjconf->cgroup_mem_max = njc.cgroup_mem_max();
 	nsjconf->cgroup_mem_mount = njc.cgroup_mem_mount();
@@ -262,10 +264,13 @@ static bool configParseInternal(nsjconf_t* nsjconf, const nsjail::NsJailConfig& 
 	nsjconf->iface_vs_ip = njc.macvlan_vs_ip();
 	nsjconf->iface_vs_nm = njc.macvlan_vs_nm();
 	nsjconf->iface_vs_gw = njc.macvlan_vs_gw();
+	nsjconf->iface_vs_ma = njc.macvlan_vs_ma();
 
 	if (njc.has_exec_bin()) {
-		nsjconf->exec_file = njc.exec_bin().path();
-		nsjconf->argv.push_back(njc.exec_bin().path());
+		if (njc.exec_bin().has_path()) {
+			nsjconf->exec_file = njc.exec_bin().path();
+			nsjconf->argv.push_back(njc.exec_bin().path());
+		}
 		for (ssize_t i = 0; i < njc.exec_bin().arg().size(); i++) {
 			nsjconf->argv.push_back(njc.exec_bin().arg(i));
 		}
@@ -286,7 +291,7 @@ static void LogHandler(
 bool parseFile(nsjconf_t* nsjconf, const char* file) {
 	LOG_D("Parsing configuration from '%s'", file);
 
-	int fd = open(file, O_RDONLY | O_CLOEXEC);
+	int fd = TEMP_FAILURE_RETRY(open(file, O_RDONLY | O_CLOEXEC));
 	if (fd == -1) {
 		PLOG_W("Couldn't open config file '%s'", file);
 		return false;

@@ -64,8 +64,7 @@ ssize_t readFromFd(int fd, void* buf, size_t len) {
 }
 
 ssize_t readFromFile(const char* fname, void* buf, size_t len) {
-	int fd;
-	TEMP_FAILURE_RETRY(fd = open(fname, O_RDONLY | O_CLOEXEC));
+	int fd = TEMP_FAILURE_RETRY(open(fname, O_RDONLY | O_CLOEXEC));
 	if (fd == -1) {
 		LOG_E("open('%s', O_RDONLY|O_CLOEXEC)", fname);
 		return -1;
@@ -75,7 +74,7 @@ ssize_t readFromFile(const char* fname, void* buf, size_t len) {
 	return ret;
 }
 
-ssize_t writeToFd(int fd, const void* buf, size_t len) {
+bool writeToFd(int fd, const void* buf, size_t len) {
 	const uint8_t* charbuf = (const uint8_t*)buf;
 
 	size_t writtenSz = 0;
@@ -118,7 +117,7 @@ bool createDirRecursively(const char* dir) {
 		return false;
 	}
 
-	int prev_dir_fd = open("/", O_RDONLY | O_CLOEXEC);
+	int prev_dir_fd = TEMP_FAILURE_RETRY(open("/", O_RDONLY | O_CLOEXEC | O_DIRECTORY));
 	if (prev_dir_fd == -1) {
 		PLOG_W("open('/', O_RDONLY | O_CLOEXEC)");
 		return false;
@@ -212,11 +211,11 @@ static const uint64_t c = 1442695040888963407ULL;
 
 static void rndInitThread(void) {
 #if defined(__NR_getrandom)
-	if (syscall(__NR_getrandom, &rndX, sizeof(rndX), 0) == sizeof(rndX)) {
+	if (util::syscall(__NR_getrandom, (uintptr_t)&rndX, sizeof(rndX), 0) == sizeof(rndX)) {
 		return;
 	}
 #endif /* defined(__NR_getrandom) */
-	int fd = open("/dev/urandom", O_RDONLY | O_CLOEXEC);
+	int fd = TEMP_FAILURE_RETRY(open("/dev/urandom", O_RDONLY | O_CLOEXEC));
 	if (fd == -1) {
 		PLOG_D(
 		    "Couldn't open /dev/urandom for reading. Using gettimeofday "
@@ -315,6 +314,11 @@ std::vector<std::string> strSplit(const std::string str, char delim) {
 		vec.push_back(word);
 	}
 	return vec;
+}
+
+long syscall(long sysno, uintptr_t a0, uintptr_t a1, uintptr_t a2, uintptr_t a3, uintptr_t a4,
+    uintptr_t a5) {
+	return ::syscall(sysno, a0, a1, a2, a3, a4, a5);
 }
 
 }  // namespace util

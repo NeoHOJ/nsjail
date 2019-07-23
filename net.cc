@@ -50,7 +50,6 @@ namespace net {
 
 #define IFACE_NAME "vs"
 
-#if defined(NSJAIL_NL3_WITH_MACVLAN)
 #include <netlink/route/link.h>
 #include <netlink/route/link/macvlan.h>
 
@@ -73,6 +72,17 @@ static bool cloneIface(
 	rtnl_link_set_name(rmv, IFACE_NAME);
 	rtnl_link_set_link(rmv, master_index);
 	rtnl_link_set_ns_pid(rmv, pid);
+
+	if (nsjconf->iface_vs_ma != "") {
+		struct nl_addr* nladdr = nullptr;
+		if ((err = nl_addr_parse(nsjconf->iface_vs_ma.c_str(), AF_LLC, &nladdr)) < 0) {
+			LOG_E("nl_addr_parse('%s', AF_LLC) failed: %s",
+			    nsjconf->iface_vs_ma.c_str(), nl_geterror(err));
+			return false;
+		}
+		rtnl_link_set_addr(rmv, nladdr);
+		nl_addr_put(nladdr);
+	}
 
 	if ((err = rtnl_link_add(sk, rmv, NLM_F_CREATE)) < 0) {
 		LOG_E("rtnl_link_add(name:'%s' link:'%s'): %s", IFACE_NAME,
@@ -105,7 +115,7 @@ static bool moveToNs(
 
 	int err = rtnl_link_change(sk, orig_link, new_link, RTM_SETLINK);
 	if (err < 0) {
-		LOG_E("rtnl_link_change(): set NS of interface '%s' to PID=%d: %s", iface.c_str(),
+		LOG_E("rtnl_link_change(): set NS of interface '%s' to pid=%d: %s", iface.c_str(),
 		    (int)pid, nl_geterror(err));
 		rtnl_link_put(new_link);
 		rtnl_link_put(orig_link);
@@ -158,45 +168,6 @@ bool initNsFromParent(nsjconf_t* nsjconf, int pid) {
 	nl_socket_free(sk);
 	return true;
 }
-#else   // defined(NSJAIL_NL3_WITH_MACVLAN)
-
-static bool moveToNs(const std::string& iface, pid_t pid) {
-	const std::vector<std::string> argv{
-	    "/sbin/ip", "link", "set", iface, "netns", std::to_string(pid)};
-	if (subproc::systemExe(argv, environ) != 0) {
-		LOG_E("Couldn't put interface '%s' into NET ns of the PID=%d", iface.c_str(),
-		    (int)pid);
-		return false;
-	}
-	return true;
-}
-
-bool initNsFromParent(nsjconf_t* nsjconf, int pid) {
-	if (!nsjconf->clone_newnet) {
-		return true;
-	}
-	for (const auto& iface : nsjconf->ifaces) {
-		if (!moveToNs(iface, pid)) {
-			return false;
-		}
-	}
-	if (nsjconf->iface_vs.empty()) {
-		return true;
-	}
-
-	LOG_D("Putting iface:'%s' into namespace of PID:%d (with /sbin/ip)",
-	    nsjconf->iface_vs.c_str(), pid);
-
-	const std::vector<std::string> argv{"/sbin/ip", "link", "add", "link", nsjconf->iface_vs,
-	    "name", IFACE_NAME, "netns", std::to_string(pid), "type", "macvlan", "mode", "bridge"};
-	if (subproc::systemExe(argv, environ) != 0) {
-		LOG_E("Couldn't create MACVTAP interface for '%s'", nsjconf->iface_vs.c_str());
-		return false;
-	}
-
-	return true;
-}
-#endif  // defined(NSJAIL_NL3_WITH_MACVLAN)
 
 static bool isSocket(int fd) {
 	int optval;

@@ -487,7 +487,7 @@ Options:
  --cgroup_net_cls_parent VALUE
 	Which pre-existing net_cls cgroup to use as a parent (default: 'NSJAIL')
  --cgroup_cpu_ms_per_sec VALUE
-	Number of us that the process group can use per second (default: '0' - disabled)
+	Number of milliseconds of CPU time per second that the process group can use (default: '0' - no limit)
  --cgroup_cpu_mount VALUE
 	Location of cpu cgroup FS (default: '/sys/fs/cgroup/net_cls')
  --cgroup_cpu_parent VALUE
@@ -504,6 +504,8 @@ Options:
 	Netmask of the 'vs' interface (e.g. "255.255.255.0")
  --macvlan_vs_gw VALUE
 	Default GW for the 'vs' interface (e.g. "192.168.0.1")
+ --macvlan_vs_ma VALUE
+	MAC-address of the 'vs' interface (e.g. "ba:ad:ba:be:45:00")
 
  Examples: 
  Wait on a port 31337 for connections, and run /bin/sh

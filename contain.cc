@@ -48,6 +48,7 @@
 #include "net.h"
 #include "pid.h"
 #include "user.h"
+#include "util.h"
 #include "uts.h"
 
 namespace contain {
@@ -99,9 +100,10 @@ static bool containPrepareEnv(nsjconf_t* nsjconf) {
 		PLOG_E("personality(%lx)", nsjconf->personality);
 		return false;
 	}
+	LOG_D("setpriority(%d)", nsjconf->nice_level);
 	errno = 0;
-	if (setpriority(PRIO_PROCESS, 0, 19) == -1 && errno != 0) {
-		PLOG_W("setpriority(19)");
+	if (setpriority(PRIO_PROCESS, 0, nsjconf->nice_level) == -1 && errno != 0) {
+		PLOG_W("setpriority(%d)", nsjconf->nice_level);
 	}
 	if (!nsjconf->skip_setsid) {
 		setsid();
@@ -174,14 +176,14 @@ static bool containMakeFdsCOENaive(nsjconf_t* nsjconf) {
 			continue;
 		}
 		if (containPassFd(nsjconf, fd)) {
-			LOG_D("FD=%d will be passed to the child process", fd);
+			LOG_D("fd=%d will be passed to the child process", fd);
 			if (TEMP_FAILURE_RETRY(fcntl(fd, F_SETFD, flags & ~(FD_CLOEXEC))) == -1) {
-				PLOG_E("Could not set FD_CLOEXEC for FD=%d", fd);
+				PLOG_E("Could not set FD_CLOEXEC for fd=%d", fd);
 				return false;
 			}
 		} else {
 			if (TEMP_FAILURE_RETRY(fcntl(fd, F_SETFD, flags | FD_CLOEXEC)) == -1) {
-				PLOG_E("Could not set FD_CLOEXEC for FD=%d", fd);
+				PLOG_E("Could not set FD_CLOEXEC for fd=%d", fd);
 				return false;
 			}
 		}
@@ -227,21 +229,21 @@ static bool containMakeFdsCOEProc(nsjconf_t* nsjconf) {
 		}
 		int flags = TEMP_FAILURE_RETRY(fcntl(fd, F_GETFD, 0));
 		if (flags == -1) {
-			PLOG_D("fcntl(fd=%xld, F_GETFD, 0)", fd);
+			PLOG_D("fcntl(fd=%d, F_GETFD, 0)", fd);
 			closedir(dir);
 			return false;
 		}
 		if (containPassFd(nsjconf, fd)) {
-			LOG_D("FD=%d will be passed to the child process", fd);
+			LOG_D("fd=%d will be passed to the child process", fd);
 			if (TEMP_FAILURE_RETRY(fcntl(fd, F_SETFD, flags & ~(FD_CLOEXEC))) == -1) {
-				PLOG_E("Could not clear FD_CLOEXEC for FD=%d", fd);
+				PLOG_E("Could not clear FD_CLOEXEC for fd=%d", fd);
 				closedir(dir);
 				return false;
 			}
 		} else {
-			LOG_D("FD=%d will be closed before execve()", fd);
+			LOG_D("fd=%d will be closed before execve()", fd);
 			if (TEMP_FAILURE_RETRY(fcntl(fd, F_SETFD, flags | FD_CLOEXEC)) == -1) {
-				PLOG_E("Could not set FD_CLOEXEC for FD=%d", fd);
+				PLOG_E("Could not set FD_CLOEXEC for fd=%d", fd);
 				closedir(dir);
 				return false;
 			}
@@ -264,14 +266,14 @@ static bool containMakeFdsCOE(nsjconf_t* nsjconf) {
 
 bool setupFD(nsjconf_t* nsjconf, int fd_in, int fd_out, int fd_err) {
 	if (nsjconf->stderr_to_null) {
-		LOG_D("Redirecting FD=2 (STDERR_FILENO) to /dev/null");
+		LOG_D("Redirecting fd=2 (STDERR_FILENO) to /dev/null");
 		if ((fd_err = TEMP_FAILURE_RETRY(open("/dev/null", O_RDWR))) == -1) {
 			PLOG_E("open('/dev/null', O_RDWR");
 			return false;
 		}
 	}
 	if (nsjconf->is_silent) {
-		LOG_D("Redirecting FD=0/1/2 (STDIN/OUT/ERR_FILENO) to /dev/null");
+		LOG_D("Redirecting fd=0-2 (STDIN/OUT/ERR_FILENO) to /dev/null");
 		if (TEMP_FAILURE_RETRY(fd_in = fd_out = fd_err = open("/dev/null", O_RDWR)) == -1) {
 			PLOG_E("open('/dev/null', O_RDWR)");
 			return false;
@@ -294,41 +296,21 @@ bool setupFD(nsjconf_t* nsjconf, int fd_in, int fd_out, int fd_err) {
 }
 
 bool containProc(nsjconf_t* nsjconf) {
-	if (!containUserNs(nsjconf)) {
-		return false;
-	}
-	if (!containInitPidNs(nsjconf)) {
-		return false;
-	}
-	if (!containInitMountNs(nsjconf)) {
-		return false;
-	}
-	if (!containInitNetNs(nsjconf)) {
-		return false;
-	}
-	if (!containInitUtsNs(nsjconf)) {
-		return false;
-	}
-	if (!containInitCgroupNs()) {
-		return false;
-	}
-	if (!containDropPrivs(nsjconf)) {
-		return false;
-	}
+	RETURN_ON_FAILURE(containUserNs(nsjconf));
+	RETURN_ON_FAILURE(containInitPidNs(nsjconf));
+	RETURN_ON_FAILURE(containInitMountNs(nsjconf));
+	RETURN_ON_FAILURE(containInitNetNs(nsjconf));
+	RETURN_ON_FAILURE(containInitUtsNs(nsjconf));
+	RETURN_ON_FAILURE(containInitCgroupNs());
+	RETURN_ON_FAILURE(containDropPrivs(nsjconf));
+	;
 	/* */
 	/* As non-root */
-	if (!containCPU(nsjconf)) {
-		return false;
-	}
-	if (!containSetLimits(nsjconf)) {
-		return false;
-	}
-	if (!containPrepareEnv(nsjconf)) {
-		return false;
-	}
-	if (!containMakeFdsCOE(nsjconf)) {
-		return false;
-	}
+	RETURN_ON_FAILURE(containCPU(nsjconf));
+	RETURN_ON_FAILURE(containSetLimits(nsjconf));
+	RETURN_ON_FAILURE(containPrepareEnv(nsjconf));
+	RETURN_ON_FAILURE(containMakeFdsCOE(nsjconf));
+
 	return true;
 }
 

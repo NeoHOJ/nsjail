@@ -37,7 +37,6 @@
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <syscall.h>
 #include <unistd.h>
 
 #include <memory>
@@ -90,16 +89,16 @@ static const std::string flagsToStr(uintptr_t flags) {
 	uintptr_t knownFlagMask = 0U;
 	for (const auto& i : mountFlags) {
 		if (flags & i.flag) {
+			if (!res.empty()) {
+				res.append("|");
+			}
 			res.append(i.name);
-			res.append("|");
 		}
 		knownFlagMask |= i.flag;
 	}
 
-	if (((flags & ~(knownFlagMask)) == 0) && !res.empty()) {
-		res.pop_back();
-	} else {
-		util::StrAppend(&res, "%#tx", flags & ~(knownFlagMask));
+	if (flags & ~(knownFlagMask)) {
+		util::StrAppend(&res, "|%#tx", flags & ~(knownFlagMask));
 	}
 
 	return res;
@@ -283,6 +282,13 @@ static bool mkdirAndTest(const std::string& dir) {
 static std::unique_ptr<std::string> getDir(nsjconf_t* nsjconf, const char* name) {
 	std::unique_ptr<std::string> dir(new std::string);
 
+	dir->assign("/run/user/").append(std::to_string(nsjconf->orig_uid)).append("/nsjail");
+	if (mkdirAndTest(*dir)) {
+		dir->append("/").append(name);
+		if (mkdirAndTest(*dir)) {
+			return dir;
+		}
+	}
 	dir->assign("/run/user/")
 	    .append("/nsjail.")
 	    .append(std::to_string(nsjconf->orig_uid))
@@ -338,10 +344,7 @@ static bool initNsInternal(nsjconf_t* nsjconf) {
 	 */
 	if (!nsjconf->clone_newns) {
 		if (nsjconf->chroot.empty()) {
-			PLOG_E(
-			    "--chroot was not specified, and it's required when not using "
-			    "CLONE_NEWNS");
-			return false;
+			return true;
 		}
 		if (chroot(nsjconf->chroot.c_str()) == -1) {
 			PLOG_E("chroot('%s')", nsjconf->chroot.c_str());
@@ -402,7 +405,8 @@ static bool initNsInternal(nsjconf_t* nsjconf) {
 	 * providing any special directory for old_root, which is sometimes not easy, given that
 	 * e.g. /tmp might not always be present inside new_root
 	 */
-	if (syscall(__NR_pivot_root, destdir->c_str(), destdir->c_str()) == -1) {
+	if (util::syscall(
+		__NR_pivot_root, (uintptr_t)destdir->c_str(), (uintptr_t)destdir->c_str()) == -1) {
 		PLOG_E("pivot_root('%s', '%s')", destdir->c_str(), destdir->c_str());
 		return false;
 	}
@@ -539,13 +543,14 @@ bool addMountPtTail(nsjconf_t* nsjconf, const std::string& src, const std::strin
 const std::string describeMountPt(const mount_t& mpt) {
 	std::string descr;
 
-	descr.append("src:'")
-	    .append(mpt.src)
-	    .append("' dst:'")
+	descr.append(mpt.src.empty() ? "" : "'")
+	    .append(mpt.src.empty() ? "" : mpt.src)
+	    .append(mpt.src.empty() ? "" : "' -> ")
+	    .append("'")
 	    .append(mpt.dst)
-	    .append("' flags:'")
+	    .append("' flags:")
 	    .append(flagsToStr(mpt.flags))
-	    .append("' type:'")
+	    .append(" type:'")
 	    .append(mpt.fs_type)
 	    .append("' options:'")
 	    .append(mpt.options)

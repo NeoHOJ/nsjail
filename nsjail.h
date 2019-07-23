@@ -125,6 +125,7 @@ struct nsjconf_t {
 	std::string iface_vs_ip;
 	std::string iface_vs_nm;
 	std::string iface_vs_gw;
+	std::string iface_vs_ma;
 	std::string cgroup_mem_mount;
 	std::string cgroup_mem_parent;
 	size_t cgroup_mem_max;
@@ -141,8 +142,10 @@ struct nsjconf_t {
 	std::string kafel_string;
 	struct sock_fprog seccomp_fprog;
 	bool seccomp_log;
+	int nice_level;
 	long num_cpus;
 	uid_t orig_uid;
+	uid_t orig_euid;
 	std::vector<mount_t> mountpts;
 	std::vector<pids_t> pids;
 	std::vector<idmap_t> uids;

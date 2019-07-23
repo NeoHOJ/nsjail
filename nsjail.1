@@ -85,14 +85,14 @@ Verbose output
 \fB\-\-quiet\fR|\fB\-q\fR
 Log warning and more important messages only
 .TP
-\fB\-\-realy_quiet\fR|\fB\-Q\fR
+\fB\-\-really_quiet\fR|\fB\-Q\fR
 Log fatal messages only
 .TP
 \fB\-\-keep_env\fR|\fB\-e\fR
 Pass all environment variables be passed process (default: all envvars are cleared)
 .TP
 \fB\-\-env\fR|\fB\-E\fR VALUE
-Additional environment variable (can be used multiple times)
+Additional environment variable (can be used multiple times). If the envvar doesn't contain '=' (e.g. just the 'DISPLAY' string), the current envvar value will be used
 .TP
 \fB\-\-keep_caps\fR
 Don't drop any capabilities
@@ -239,7 +239,7 @@ Location of net_cls cgroup FS (default: '/sys/fs/cgroup/net_cls')
 Which pre\-existing net_cls cgroup to use as a parent (default: 'NSJAIL')
 .TP
 \fB\-\-cgroup_cpu_ms_per_sec\fR VALUE
-Number of us that the process group can use per second (default: '0' - disabled)
+Number of milliseconds of CPU time per second that the process group can use (default: '0' - no limit)
 .TP
 \fB\-\-cgroup_cpu_mount\fR VALUE
 Location of cpu cgroup FS (default: '/sys/fs/cgroup/net_cls')
@@ -264,6 +264,9 @@ Netmask of the 'vs' interface (e.g. "255.255.255.0")
 .TP
 \fB\-\-macvlan_vs_gw\fR VALUE
 Default GW for the 'vs' interface (e.g. "192.168.0.1")
+.TP
+\fB\-\-macvlan_vs_ma\fR VALUE
+MAC-address of the 'vs' interface (e.g. "ba:ad:ba:be:45:00")
 \"
 .SH Examples
 .PP

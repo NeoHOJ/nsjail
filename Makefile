@@ -48,13 +48,10 @@ ifdef DEBUG
 	CXXFLAGS += -g -ggdb -gdwarf-4
 endif
 
-USE_NL3 ?= yes
-ifeq ($(USE_NL3), yes)
 NL3_EXISTS := $(shell pkg-config --exists libnl-route-3.0 && echo yes)
 ifeq ($(NL3_EXISTS), yes)
-	CXXFLAGS += -DNSJAIL_NL3_WITH_MACVLAN $(shell pkg-config --cflags libnl-route-3.0)
+	CXXFLAGS += $(shell pkg-config --cflags libnl-route-3.0)
 	LDFLAGS += $(shell pkg-config --libs libnl-route-3.0)
-endif
 endif
 
 .PHONY: all clean depend indent
@@ -66,9 +63,9 @@ all: $(BIN)
 
 $(BIN): $(LIBS) $(OBJS)
 ifneq ($(NL3_EXISTS), yes)
-	$(warning "==========================================================")
-	$(warning "No support for libnl3/libnl-route-3; /sbin/ip will be used")
-	$(warning "==========================================================")
+	$(warning "============================================================")
+	$(warning "You probably miss libnl3(-dev)/libnl-route-3(-dev) libraries")
+	$(warning "============================================================")
 endif
 	$(CXX) -o $(BIN) $(OBJS) $(LIBS) $(LDFLAGS)
 
@@ -106,17 +103,17 @@ caps.o: caps.h nsjail.h logs.h macros.h util.h
 cgroup.o: cgroup.h nsjail.h logs.h util.h
 cmdline.o: cmdline.h nsjail.h caps.h config.h logs.h macros.h mnt.h user.h
 cmdline.o: util.h
-config.o: caps.h nsjail.h cmdline.h config.h config.pb.h logs.h macros.h
+config.o: config.h nsjail.h caps.h cmdline.h config.pb.h logs.h macros.h
 config.o: mnt.h user.h util.h
 contain.o: contain.h nsjail.h caps.h cgroup.h cpu.h logs.h macros.h mnt.h
-contain.o: net.h pid.h user.h uts.h
+contain.o: net.h pid.h user.h util.h uts.h
 cpu.o: cpu.h nsjail.h logs.h util.h
 logs.o: logs.h macros.h util.h nsjail.h
 mnt.o: mnt.h nsjail.h logs.h macros.h subproc.h util.h
 net.o: net.h nsjail.h logs.h subproc.h
 nsjail.o: nsjail.h cmdline.h logs.h macros.h net.h sandbox.h subproc.h util.h
 pid.o: pid.h nsjail.h logs.h subproc.h
-sandbox.o: sandbox.h nsjail.h kafel/include/kafel.h logs.h
+sandbox.o: sandbox.h nsjail.h kafel/include/kafel.h logs.h util.h
 subproc.o: subproc.h nsjail.h cgroup.h contain.h logs.h macros.h net.h
 subproc.o: sandbox.h user.h util.h
 uts.o: uts.h nsjail.h logs.h
