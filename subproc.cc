@@ -389,6 +389,10 @@ int reapProc(nsjconf_t* nsjconf) {
 		}
 		if (si.si_code == CLD_KILLED && si.si_status == SIGSYS) {
 			seccompViolation(nsjconf, &si);
+			LOG_STAT("%d:seccomp_violation = true", si.si_pid);
+		} else if (nsjconf->seccomp_fprog.filter) {
+			// show "not violating" message only when BPF is set
+			LOG_STAT("%d:seccomp_violation = false", si.si_pid);
 		}
 		rv = reapProc(nsjconf, si.si_pid);
 	}
