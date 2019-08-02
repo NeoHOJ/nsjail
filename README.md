@@ -1,3 +1,5 @@
+# Docs dedicated for this fork is located in [DOCS_HOJ/](DOCS_HOJ)
+
 - [Overview](#overview)
 - [What forms of isolation does it provide](#what-forms-of-isolation-does-it-provide)
 - Which use-cases are supported
@@ -81,17 +83,17 @@ $ sudo ./nsjail --user 9999 --group 9999 --macvlan_iface eth0 --chroot /chroot/ 
 / $ id
 uid=9999 gid=9999
 / $ ip addr sh
-1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue 
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue
     link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
     inet 127.0.0.1/8 scope host lo
        valid_lft forever preferred_lft forever
-    inet6 ::1/128 scope host 
+    inet6 ::1/128 scope host
        valid_lft forever preferred_lft forever
-2: vs: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue 
+2: vs: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue
     link/ether ca:a2:69:21:33:66 brd ff:ff:ff:ff:ff:ff
     inet 192.168.0.44/24 brd 192.168.0.255 scope global vs
        valid_lft forever preferred_lft forever
-    inet6 fe80::c8a2:69ff:fe21:cd66/64 scope link 
+    inet6 fe80::c8a2:69ff:fe21:cd66/64 scope link
        valid_lft forever preferred_lft forever
 / $ nc 217.146.165.209 80
 GET / HTTP/1.0
@@ -105,7 +107,7 @@ Date: Wed, 02 Mar 2016 02:14:08 GMT
 
 ...
 ...
-/ $ 
+/ $
 </pre>
 
 #### Isolation of local processes
@@ -338,7 +340,7 @@ The command-line options should be self-explanatory, while the proto-buf config 
 <pre>
 Usage: ./nsjail [options] -- path_to_command [args]
 Options:
- --help|-h 
+ --help|-h
 	Help plz..
  --mode|-M VALUE
 	Execution mode (default: 'o' [MODE_STANDALONE_ONCE]):
@@ -350,11 +352,11 @@ Options:
 	Configuration file in the config.proto ProtoBuf format (see configs/ directory for examples)
  --exec_file|-x VALUE
 	File to exec (default: argv[0])
- --execute_fd 
+ --execute_fd
 	Use execveat() to execute a file-descriptor instead of executing the binary path. In such case argv[0]/exec_file denotes a file path before mount namespacing
  --chroot|-c VALUE
 	Directory containing / of the jail (default: none)
- --rw 
+ --rw
 	Mount chroot dir (/) R/W (default: R/O)
  --user|-u VALUE
 	Username/uid of processess inside the jail (default: your current uid). You can also use inside_ns_uid:outside_ns_uid:count convention here. Can be specified multiple times
@@ -378,31 +380,31 @@ Options:
 	Maximum time that a jail can exist, in seconds (default: 600)
  --max_cpus VALUE
 	Maximum number of CPUs a single jailed process can use (default: 0 'no limit')
- --daemon|-d 
+ --daemon|-d
 	Daemonize after start
- --verbose|-v 
+ --verbose|-v
 	Verbose output
- --quiet|-q 
+ --quiet|-q
 	Log warning and more important messages only
- --really_quiet|-Q 
+ --really_quiet|-Q
 	Log fatal messages only
- --keep_env|-e 
+ --keep_env|-e
 	Pass all environment variables to the child process (default: all envvars are cleared)
  --env|-E VALUE
 	Additional environment variable (can be used multiple times)
- --keep_caps 
+ --keep_caps
 	Don't drop any capabilities
  --cap VALUE
 	Retain this capability, e.g. CAP_PTRACE (can be specified multiple times)
- --silent 
+ --silent
 	Redirect child process' fd:0/1/2 to /dev/null
  --stderr_to_null
 	Redirect FD=2 (STDERR_FILENO) to /dev/null
- --skip_setsid 
+ --skip_setsid
 	Don't call setsid(), allows for terminal signal handling in the sandboxed process. Dangerous
  --pass_fd VALUE
 	Don't close this FD before executing the child process (can be specified multiple times), by default: 0/1/2 are kept open
- --disable_no_new_privs 
+ --disable_no_new_privs
 	Don't set the prctl(NO_NEW_PRIVS, 1) (DANGEROUS)
  --rlimit_as VALUE
 	RLIMIT_AS in MB, 'max' or 'hard' for the current hard limit, 'def' or 'soft' for the current soft limit, 'inf' for RLIM64_INFINITY (default: 512)
@@ -418,29 +420,29 @@ Options:
 	RLIMIT_NPROC, 'max' or 'hard' for the current hard limit, 'def' or 'soft' for the current soft limit, 'inf' for RLIM64_INFINITY (default: 'soft')
  --rlimit_stack VALUE
 	RLIMIT_STACK in MB, 'max' or 'hard' for the current hard limit, 'def' or 'soft' for the current soft limit, 'inf' for RLIM64_INFINITY (default: 'soft')
- --persona_addr_compat_layout 
+ --persona_addr_compat_layout
 	personality(ADDR_COMPAT_LAYOUT)
- --persona_mmap_page_zero 
+ --persona_mmap_page_zero
 	personality(MMAP_PAGE_ZERO)
- --persona_read_implies_exec 
+ --persona_read_implies_exec
 	personality(READ_IMPLIES_EXEC)
- --persona_addr_limit_3gb 
+ --persona_addr_limit_3gb
 	personality(ADDR_LIMIT_3GB)
- --persona_addr_no_randomize 
+ --persona_addr_no_randomize
 	personality(ADDR_NO_RANDOMIZE)
- --disable_clone_newnet|-N 
+ --disable_clone_newnet|-N
 	Don't use CLONE_NEWNET. Enable global networking inside the jail
- --disable_clone_newuser 
+ --disable_clone_newuser
 	Don't use CLONE_NEWUSER. Requires euid==0
- --disable_clone_newns 
+ --disable_clone_newns
 	Don't use CLONE_NEWNS
- --disable_clone_newpid 
+ --disable_clone_newpid
 	Don't use CLONE_NEWPID
- --disable_clone_newipc 
+ --disable_clone_newipc
 	Don't use CLONE_NEWIPC
- --disable_clone_newuts 
+ --disable_clone_newuts
 	Don't use CLONE_NEWUTS
- --disable_clone_newcgroup 
+ --disable_clone_newcgroup
 	Don't use CLONE_NEWCGROUP. Might be required for kernel versions < 4.6
  --uid_mapping|-U VALUE
 	Add a custom uid mapping of the form inside_uid:outside_uid:count. Setting this requires newuidmap (set-uid) to be present
@@ -456,17 +458,17 @@ Options:
 	Arbitrary mount, format src:dst:fs_type:options
  --symlink|-s VALUE
 	Symlink, format src:dst
- --disable_proc 
+ --disable_proc
 	Disable mounting procfs in the jail
  --proc_path VALUE
 	Path used to mount procfs (default: '/proc')
- --proc_rw 
+ --proc_rw
 	Is procfs mounted as R/W (default: R/O)
  --seccomp_policy|-P VALUE
 	Path to file containing seccomp-bpf policy (see kafel/)
  --seccomp_string VALUE
 	String with kafel seccomp-bpf policy (see kafel/)
- --seccomp_log 
+ --seccomp_log
 	Use SECCOMP_FILTER_FLAG_LOG. Log all actions except SECCOMP_RET_ALLOW). Supported since kernel version 4.14
  --cgroup_mem_max VALUE
 	Maximum number of bytes to use in the group (default: '0' - disabled)
@@ -492,7 +494,7 @@ Options:
 	Location of cpu cgroup FS (default: '/sys/fs/cgroup/net_cls')
  --cgroup_cpu_parent VALUE
 	Which pre-existing cpu cgroup to use as a parent (default: 'NSJAIL')
- --iface_no_lo 
+ --iface_no_lo
 	Don't bring the 'lo' interface up
  --iface_own VALUE
 	Move this existing network interface into the new NET namespace. Can be specified multiple times
@@ -507,7 +509,7 @@ Options:
  --macvlan_vs_ma VALUE
 	MAC-address of the 'vs' interface (e.g. "ba:ad:ba:be:45:00")
 
- Examples: 
+ Examples:
  Wait on a port 31337 for connections, and run /bin/sh
   nsjail -Ml --port 31337 --chroot / -- /bin/sh -i
  Re-run echo command as a sub-process
