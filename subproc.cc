@@ -559,6 +559,8 @@ bool runChild(nsjconf_t* nsjconf, int fd_in, int fd_out, int fd_err) {
 		return false;
 	}
 
+	LOG_STAT("%d:process_spawned = %u", pid, (unsigned int) getPidElem(nsjconf, pid)->start);
+
 	char rcvChar;
 	if (util::readFromFd(parent_fd, &rcvChar, sizeof(rcvChar)) == sizeof(rcvChar) &&
 	    rcvChar == kSubprocErrorChar) {
