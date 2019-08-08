@@ -152,6 +152,7 @@ struct custom_option custom_opts[] = {
     { { "macvlan_vs_nm", required_argument, NULL, 0x702 }, "Netmask of the 'vs' interface (e.g. \"255.255.255.0\")" },
     { { "macvlan_vs_gw", required_argument, NULL, 0x703 }, "Default GW for the 'vs' interface (e.g. \"192.168.0.1\")" },
     { { "macvlan_vs_ma", required_argument, NULL, 0x705 }, "MAC-address of the 'vs' interface (e.g. \"ba:ad:ba:be:45:00\")" },
+    { { "wait_for_debugger", no_argument, NULL, 0x10001 }, "Stop the child upon start, waiting for ptracer to attach" },
 };
 // clang-format on
 
@@ -438,6 +439,7 @@ std::unique_ptr<nsjconf_t> parseArgs(int argc, char* argv[]) {
 	nsjconf->seccomp_fprog.filter = NULL;
 	nsjconf->seccomp_fprog.len = 0;
 	nsjconf->seccomp_log = false;
+	nsjconf->wait_for_debugger = false;
 
 	nsjconf->openfds.push_back(STDIN_FILENO);
 	nsjconf->openfds.push_back(STDOUT_FILENO);
@@ -823,6 +825,9 @@ std::unique_ptr<nsjconf_t> parseArgs(int argc, char* argv[]) {
 			break;
 		case 0x902:
 			nsjconf->seccomp_log = true;
+			break;
+		case 0x10001:
+			nsjconf->wait_for_debugger = true;
 			break;
 		default:
 			cmdlineUsage(argv[0]);

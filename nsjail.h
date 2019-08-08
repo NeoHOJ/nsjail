@@ -158,6 +158,7 @@ struct nsjconf_t {
 	std::vector<int> openfds;
 	std::vector<int> caps;
 	std::vector<std::string> ifaces;
+	bool wait_for_debugger;
 };
 
 #endif /* _NSJAIL_H */

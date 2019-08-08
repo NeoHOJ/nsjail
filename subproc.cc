@@ -203,6 +203,15 @@ static void subprocNewProc(nsjconf_t* nsjconf, int fd_in, int fd_out, int fd_err
 	}
 	argv.push_back(nullptr);
 
+	if (nsjconf->wait_for_debugger) {
+		LOG_I("Waiting for the debugger to attach...");
+		if (raise(SIGSTOP) < 0) {
+			PLOG_E("Failed to raise SIGSTOP");
+			return;
+		}
+		LOG_I("Continued from stopped state");
+	}
+
 	/* Should be the last one in the sequence */
 	if (!sandbox::applyPolicy(nsjconf)) {
 		return;

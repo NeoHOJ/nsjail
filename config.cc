@@ -276,6 +276,8 @@ static bool configParseInternal(nsjconf_t* nsjconf, const nsjail::NsJailConfig& 
 		nsjconf->use_execveat = njc.exec_bin().exec_fd();
 	}
 
+	nsjconf->wait_for_debugger = njc.wait_for_debugger();
+
 	return true;
 }
 
