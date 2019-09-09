@@ -28,13 +28,13 @@ message IdMap {
 message MountPt {
     /* Can be skipped for filesystems like 'proc' */
     optional string src = 1 [default = ""];
-    /* Should 'src' path be prefixed with this envvar? */
+    /* Should 'src' path be prefixed with this envar? */
     optional string prefix_src_env = 2 [default = ""];
     /* If specified, contains buffer that will be written to the dst file */
     optional bytes src_content = 3 [default = ""];
     /* Mount point inside jail */
     required string dst = 4 [default = ""];
-    /* Should 'dst' path be prefixed with this envvar? */
+    /* Should 'dst' path be prefixed with this envar? */
     optional string prefix_dst_env = 5 [default = ""];
     /* Can be empty for mount --bind mounts */
     optional string fstype = 6 [default = ""];
@@ -106,7 +106,7 @@ message NsJailConfig {
 
     /* FD to log to. */
     optional int32 log_fd = 16;
-    /* File to save lofs to */
+    /* File to save logs to */
     optional string log_file = 17;
     /* Minimum log level displayed.
        See 'msg LogLevel' description for more */
@@ -115,8 +115,8 @@ message NsJailConfig {
     /* Should the current environment variables be kept
        when executing the binary */
     optional bool keep_env = 19 [default = false];
-    /* EnvVars to be set before executing binaries. If the envvar doesn't contain '='
-       (e.g. just the 'DISPLAY' string), the current envvar value will be used */
+    /* EnvVars to be set before executing binaries. If the envar doesn't contain '='
+       (e.g. just the 'DISPLAY' string), the current envar value will be used */
     repeated string envar = 20;
 
     /* Should capabilities be preserved or dropped */
@@ -159,6 +159,9 @@ message NsJailConfig {
     /* In MiB, use the soft limit value by default */
     optional uint64 rlimit_stack = 40 [default = 1048576];
     optional RLimit rlimit_stack_type = 41 [default = SOFT];
+
+    /* Disable all rlimits, default to limits set by parent */
+    optional bool disable_rl = 84 [default = false];
 
     /* See 'man personality' for more */
     optional bool persona_addr_compat_layout = 42 [default = false];
@@ -243,4 +246,10 @@ message NsJailConfig {
     /* Binary path (with arguments) to be executed. If not specified here, it
        can be specified with cmd-line as "-- /path/to/command arg1 arg2" */
     optional Exe exec_bin = 81;
+
+    /* Mount point for cgroup v2 in your system */
+    optional string cgroupv2_mount = 82 [default = "/sys/fs/cgroup"];
+
+    /* Use cgroup v2 */
+    optional bool use_cgroupv2 = 83 [default = false];
 }

@@ -92,8 +92,8 @@ struct custom_option custom_opts[] = {
     { { "verbose", no_argument, NULL, 'v' }, "Verbose output" },
     { { "quiet", no_argument, NULL, 'q' }, "Log warning and more important messages only" },
     { { "really_quiet", no_argument, NULL, 'Q' }, "Log fatal messages only" },
-    { { "keep_env", no_argument, NULL, 'e' }, "Pass all environment variables to the child process (default: all envvars are cleared)" },
-    { { "env", required_argument, NULL, 'E' }, "Additional environment variable (can be used multiple times). If the envvar doesn't contain '=' (e.g. just the 'DISPLAY' string), the current envvar value will be used" },
+    { { "keep_env", no_argument, NULL, 'e' }, "Pass all environment variables to the child process (default: all envars are cleared)" },
+    { { "env", required_argument, NULL, 'E' }, "Additional environment variable (can be used multiple times). If the envar doesn't contain '=' (e.g. just the 'DISPLAY' string), the current envar value will be used" },
     { { "keep_caps", no_argument, NULL, 0x0501 }, "Don't drop any capabilities" },
     { { "cap", required_argument, NULL, 0x0509 }, "Retain this capability, e.g. CAP_PTRACE (can be specified multiple times)" },
     { { "silent", no_argument, NULL, 0x0502 }, "Redirect child process' fd:0/1/2 to /dev/null" },
@@ -108,6 +108,7 @@ struct custom_option custom_opts[] = {
     { { "rlimit_nofile", required_argument, NULL, 0x0205 }, "RLIMIT_NOFILE, 'max' or 'hard' for the current hard limit, 'def' or 'soft' for the current soft limit, 'inf' for RLIM64_INFINITY (default: 32)" },
     { { "rlimit_nproc", required_argument, NULL, 0x0206 }, "RLIMIT_NPROC, 'max' or 'hard' for the current hard limit, 'def' or 'soft' for the current soft limit, 'inf' for RLIM64_INFINITY (default: 'soft')" },
     { { "rlimit_stack", required_argument, NULL, 0x0207 }, "RLIMIT_STACK in MB, 'max' or 'hard' for the current hard limit, 'def' or 'soft' for the current soft limit, 'inf' for RLIM64_INFINITY (default: 'soft')" },
+    { { "disable_rlimits", no_argument, NULL, 0x0208 }, "Disable all rlimits, default to limits set by parent" },
     { { "persona_addr_compat_layout", no_argument, NULL, 0x0301 }, "personality(ADDR_COMPAT_LAYOUT)" },
     { { "persona_mmap_page_zero", no_argument, NULL, 0x0302 }, "personality(MMAP_PAGE_ZERO)" },
     { { "persona_read_implies_exec", no_argument, NULL, 0x0303 }, "personality(READ_IMPLIES_EXEC)" },
@@ -146,6 +147,8 @@ struct custom_option custom_opts[] = {
     { { "cgroup_cpu_ms_per_sec", required_argument, NULL, 0x0831 }, "Number of milliseconds of CPU time per second that the process group can use (default: '0' - no limit)" },
     { { "cgroup_cpu_mount", required_argument, NULL, 0x0832 }, "Location of cpu cgroup FS (default: '/sys/fs/cgroup/net_cls')" },
     { { "cgroup_cpu_parent", required_argument, NULL, 0x0833 }, "Which pre-existing cpu cgroup to use as a parent (default: 'NSJAIL')" },
+    { { "cgroupv2_mount", required_argument, NULL, 0x0834}, "Location of cgroupv2 directory (default: '/sys/fs/cgroup')"},
+    { { "use_cgroupv2", no_argument, NULL, 0x0835}, "Use cgroup v2"},
     { { "iface_no_lo", no_argument, NULL, 0x700 }, "Don't bring the 'lo' interface up" },
     { { "iface_own", required_argument, NULL, 0x704 }, "Move this existing network interface into the new NET namespace. Can be specified multiple times" },
     { { "macvlan_iface", required_argument, NULL, 'I' }, "Interface which will be cloned (MACVLAN) and put inside the subprocess' namespace as 'vs'" },
@@ -195,7 +198,7 @@ void addEnv(nsjconf_t* nsjconf, const std::string& env) {
 	}
 	char* e = getenv(env.c_str());
 	if (!e) {
-		LOG_W("Requested to use the '%s' envvar, but it's not set. It'll be ignored",
+		LOG_W("Requested to use the '%s' envar, but it's not set. It'll be ignored",
 		    env.c_str());
 		return;
 	}
@@ -406,6 +409,7 @@ std::unique_ptr<nsjconf_t> parseArgs(int argc, char* argv[]) {
 	nsjconf->rl_nofile = 32ULL;
 	nsjconf->rl_nproc = parseRLimit(RLIMIT_NPROC, "soft", 1);
 	nsjconf->rl_stack = parseRLimit(RLIMIT_STACK, "soft", 1);
+	nsjconf->disable_rl = false;
 	nsjconf->personality = 0;
 	nsjconf->clone_newnet = true;
 	nsjconf->clone_newuser = true;
@@ -434,6 +438,8 @@ std::unique_ptr<nsjconf_t> parseArgs(int argc, char* argv[]) {
 	nsjconf->cgroup_cpu_mount = "/sys/fs/cgroup/cpu";
 	nsjconf->cgroup_cpu_parent = "NSJAIL";
 	nsjconf->cgroup_cpu_ms_per_sec = 0U;
+	nsjconf->cgroupv2_mount = "/sys/fs/cgroup";
+	nsjconf->use_cgroupv2 = false;
 	nsjconf->iface_lo = true;
 	nsjconf->iface_vs_ip = "0.0.0.0";
 	nsjconf->iface_vs_nm = "255.255.255.0";
@@ -487,6 +493,10 @@ std::unique_ptr<nsjconf_t> parseArgs(int argc, char* argv[]) {
 			nsjconf->chroot = optarg;
 			break;
 		case 'p':
+			if (!util::isANumber(optarg)) {
+				LOG_E("Couldn't parse TCP port '%s'", optarg);
+				return nullptr;
+			}
 			nsjconf->port = strtoumax(optarg, NULL, 0);
 			nsjconf->mode = MODE_LISTEN_TCP;
 			break;
@@ -544,6 +554,9 @@ std::unique_ptr<nsjconf_t> parseArgs(int argc, char* argv[]) {
 			break;
 		case 0x0207:
 			nsjconf->rl_stack = parseRLimit(RLIMIT_STACK, optarg, (1024 * 1024));
+			break;
+		case 0x0208:
+			nsjconf->disable_rl = true;
 			break;
 		case 0x0301:
 			nsjconf->personality |= ADDR_COMPAT_LAYOUT;
@@ -822,6 +835,12 @@ std::unique_ptr<nsjconf_t> parseArgs(int argc, char* argv[]) {
 			break;
 		case 0x833:
 			nsjconf->cgroup_cpu_parent = optarg;
+			break;
+		case 0x834:
+			nsjconf->cgroupv2_mount = optarg;
+			break;
+		case 0x835:
+			nsjconf->use_cgroupv2 = true;
 			break;
 		case 'P':
 			nsjconf->kafel_file_path = optarg;

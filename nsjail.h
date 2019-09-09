@@ -104,6 +104,7 @@ struct nsjconf_t {
 	uint64_t rl_nofile;
 	uint64_t rl_nproc;
 	uint64_t rl_stack;
+	bool disable_rl;
 	unsigned long personality;
 	bool clone_newnet;
 	bool clone_newuser;
@@ -138,6 +139,8 @@ struct nsjconf_t {
 	std::string cgroup_cpu_mount;
 	std::string cgroup_cpu_parent;
 	unsigned int cgroup_cpu_ms_per_sec;
+	std::string cgroupv2_mount;
+	bool use_cgroupv2;
 	std::string kafel_file_path;
 	std::string kafel_string;
 	struct sock_fprog seccomp_fprog;

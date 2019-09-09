@@ -89,10 +89,10 @@ Log warning and more important messages only
 Log fatal messages only
 .TP
 \fB\-\-keep_env\fR|\fB\-e\fR
-Pass all environment variables be passed process (default: all envvars are cleared)
+Pass all environment variables be passed process (default: all envars are cleared)
 .TP
 \fB\-\-env\fR|\fB\-E\fR VALUE
-Additional environment variable (can be used multiple times). If the envvar doesn't contain '=' (e.g. just the 'DISPLAY' string), the current envvar value will be used
+Additional environment variable (can be used multiple times). If the envar doesn't contain '=' (e.g. just the 'DISPLAY' string), the current envar value will be used
 .TP
 \fB\-\-keep_caps\fR
 Don't drop any capabilities
@@ -135,6 +135,9 @@ RLIMIT_NPROC, 'max' or 'hard' for the current hard limit, 'def' or 'soft' for th
 .TP
 \fB\-\-rlimit_stack\fR VALUE
 RLIMIT_STACK in MB, 'max' or 'hard' for the current hard limit, 'def' or 'soft' for the current soft limit, 'inf' for RLIM_INFINITY (default: 'soft')
+.TP
+\fB\-\-disable_rlimits\fR
+Disable all rlimits, default to limits set by parent
 .TP
 \fB\-\-persona_addr_compat_layout\fR
 personality(ADDR_COMPAT_LAYOUT)
@@ -246,6 +249,12 @@ Location of cpu cgroup FS (default: '/sys/fs/cgroup/net_cls')
 .TP
 \fB\-\-cgroup_cpu_parent\fR VALUE
 Which pre-existing cpu cgroup to use as a parent (default: 'NSJAIL')
+.TP
+\fB\-\-cgroupv2_mount\fR VALUE
+Location of cgroup v2 directory (default: '/sys/fs/cgroup')
+.TP
+\fB\-\-use_cgroupv2\fR
+Use cgroup v2
 .TP
 \fB\-\-iface_no_lo\fR
 Don't bring the 'lo' interface up

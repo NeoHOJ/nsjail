@@ -45,6 +45,7 @@
 #include <vector>
 
 #include "cgroup.h"
+#include "cgroup2.h"
 #include "contain.h"
 #include "logs.h"
 #include "macros.h"
@@ -141,7 +142,12 @@ static void subprocNewProc(nsjconf_t* nsjconf, int fd_in, int fd_out, int fd_err
 			LOG_E("Couldn't initialize net user namespace");
 			return;
 		}
-		if (!cgroup::initNsFromParent(nsjconf, getpid())) {
+		if (nsjconf->use_cgroupv2) {
+			if (!cgroup2::initNsFromParent(nsjconf, getpid())) {
+				LOG_E("Couldn't initialize net user namespace");
+				return;
+			}
+		} else if (!cgroup::initNsFromParent(nsjconf, getpid())) {
 			LOG_E("Couldn't initialize net user namespace");
 			return;
 		}
@@ -184,7 +190,7 @@ static void subprocNewProc(nsjconf_t* nsjconf, int fd_in, int fd_out, int fd_err
 		util::syscall(__NR_execveat, nsjconf->exec_fd, (uintptr_t) "",
 		    (uintptr_t)argv.data(), (uintptr_t)environ, AT_EMPTY_PATH);
 #else  /* defined(__NR_execveat) */
-		LOG_E("Your system doesn't support execveat() util::syscall");
+		LOG_E("Your system doesn't support execveat() syscall");
 		return;
 #endif /* defined(__NR_execveat) */
 	} else {
@@ -202,7 +208,7 @@ static void addProc(nsjconf_t* nsjconf, pid_t pid, int sock) {
 	p.remote_txt = net::connToText(sock, /* remote= */ true, &p.remote_addr);
 
 	char fname[PATH_MAX];
-	snprintf(fname, sizeof(fname), "/proc/%d/util::syscall", (int)pid);
+	snprintf(fname, sizeof(fname), "/proc/%d/syscall", (int)pid);
 	p.pid_syscall_fd = TEMP_FAILURE_RETRY(open(fname, O_RDONLY | O_CLOEXEC));
 
 	nsjconf->pids.push_back(p);
@@ -250,8 +256,7 @@ static const pids_t* getPidElem(nsjconf_t* nsjconf, pid_t pid) {
 }
 
 static void seccompViolation(nsjconf_t* nsjconf, siginfo_t* si) {
-	LOG_W(
-	    "pid=%d commited a util::syscall/seccomp violation and exited with SIGSYS", si->si_pid);
+	LOG_W("pid=%d commited a syscall/seccomp violation and exited with SIGSYS", si->si_pid);
 
 	const pids_t* p = getPidElem(nsjconf, si->si_pid);
 	if (p == NULL) {
@@ -296,7 +301,11 @@ static int reapProc(nsjconf_t* nsjconf, pid_t pid, bool should_wait = false) {
 	int status;
 
 	if (wait4(pid, &status, should_wait ? 0 : WNOHANG, NULL) == pid) {
-		cgroup::finishFromParent(nsjconf, pid);
+		if (nsjconf->use_cgroupv2) {
+			cgroup2::finishFromParent(nsjconf, pid);
+		} else {
+			cgroup::finishFromParent(nsjconf, pid);
+		}
 
 		std::string remote_txt = "[UNKNOWN]";
 		const pids_t* elem = getPidElem(nsjconf, pid);
@@ -378,10 +387,17 @@ static bool initParent(nsjconf_t* nsjconf, pid_t pid, int pipefd) {
 		LOG_E("Couldn't initialize net namespace for pid=%d", pid);
 		return false;
 	}
-	if (!cgroup::initNsFromParent(nsjconf, pid)) {
+
+	if (nsjconf->use_cgroupv2) {
+		if (!cgroup2::initNsFromParent(nsjconf, pid)) {
+			LOG_E("Couldn't initialize cgroup 2 user namespace for pid=%d", pid);
+			exit(0xff);
+		}
+	} else if (!cgroup::initNsFromParent(nsjconf, pid)) {
 		LOG_E("Couldn't initialize cgroup user namespace for pid=%d", pid);
 		exit(0xff);
 	}
+
 	if (!user::initNsFromParent(nsjconf, pid)) {
 		LOG_E("Couldn't initialize user namespace for pid=%d", pid);
 		return false;

@@ -160,6 +160,7 @@ static bool configParseInternal(nsjconf_t* nsjconf, const nsjail::NsJailConfig& 
 	nsjconf->rl_nproc = configRLimit(RLIMIT_NPROC, njc.rlimit_nproc_type(), njc.rlimit_nproc());
 	nsjconf->rl_stack = configRLimit(
 	    RLIMIT_STACK, njc.rlimit_stack_type(), njc.rlimit_stack(), 1024UL * 1024UL);
+	nsjconf->disable_rl = njc.disable_rl();
 
 	if (njc.persona_addr_compat_layout()) {
 		nsjconf->personality |= ADDR_COMPAT_LAYOUT;
@@ -253,6 +254,8 @@ static bool configParseInternal(nsjconf_t* nsjconf, const nsjail::NsJailConfig& 
 	nsjconf->cgroup_cpu_ms_per_sec = njc.cgroup_cpu_ms_per_sec();
 	nsjconf->cgroup_cpu_mount = njc.cgroup_cpu_mount();
 	nsjconf->cgroup_cpu_parent = njc.cgroup_cpu_parent();
+	nsjconf->cgroupv2_mount = njc.cgroupv2_mount();
+	nsjconf->use_cgroupv2 = njc.use_cgroupv2();
 
 	nsjconf->iface_lo = !(njc.iface_no_lo());
 	for (ssize_t i = 0; i < njc.iface_own().size(); i++) {
