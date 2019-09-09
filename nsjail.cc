@@ -190,7 +190,10 @@ void setTC(int fd, const struct termios* trm) {
 		PLOG_W("ioctl(fd=%d, TCSETS) failed", fd);
 		return;
 	}
-	LOG_D("Restored the previous state of the TTY");
+	if (tcflush(fd, TCIFLUSH) == -1) {
+		PLOG_W("tcflush(fd=%d, TCIFLUSH) failed", fd);
+		return;
+	}
 }
 
 }  // namespace nsjail
@@ -201,9 +204,6 @@ int main(int argc, char* argv[]) {
 
 	if (!nsjconf) {
 		LOG_F("Couldn't parse cmdline options");
-	}
-	if (!nsjconf->clone_newuser && geteuid() != 0) {
-		LOG_W("--disable_clone_newuser might require root() privs");
 	}
 	if (nsjconf->daemonize && (daemon(0, 0) == -1)) {
 		PLOG_F("daemon");

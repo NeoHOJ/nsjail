@@ -38,8 +38,6 @@
 #include "macros.h"
 #include "util.h"
 
-#include <string.h>
-
 namespace logs {
 
 static int _log_fd = STDERR_FILENO;
@@ -47,22 +45,30 @@ static bool _log_fd_isatty = true;
 static enum llevel_t _log_level = INFO;
 static bool _log_set = false;
 
-__attribute__((constructor)) static void log_init(void) {
-	_log_fd = fcntl(_log_fd, F_DUPFD_CLOEXEC, 0);
+static void setDupLogFdOr(int fd, int orfd) {
+	int saved_errno = errno;
+	_log_fd = fcntl(fd, F_DUPFD_CLOEXEC, 0);
 	if (_log_fd == -1) {
-		_log_fd = STDERR_FILENO;
+		_log_fd = fcntl(orfd, F_DUPFD_CLOEXEC, 0);
 	}
-	_log_fd_isatty = isatty(_log_fd);
-}
-
-bool logSet() {
-	return _log_set;
+	if (_log_fd == -1) {
+		_log_fd = orfd;
+	}
+	_log_fd_isatty = (isatty(_log_fd) == 1);
+	errno = saved_errno;
 }
 
 /*
  * Log to stderr by default. Use a dup()d fd, because in the future we'll associate the
  * connection socket with fd (0, 1, 2).
  */
+__attribute__((constructor)) static void log_init(void) {
+	setDupLogFdOr(STDERR_FILENO, STDERR_FILENO);
+}
+
+bool logSet() {
+	return _log_set;
+}
 
 void logLevel(enum llevel_t ll) {
 	_log_level = ll;
@@ -70,17 +76,18 @@ void logLevel(enum llevel_t ll) {
 
 void logFile(const std::string& logfile) {
 	_log_set = true;
+	int newlogfd = TEMP_FAILURE_RETRY(
+	    open(logfile.c_str(), O_CREAT | O_RDWR | O_APPEND | O_CLOEXEC, 0640));
+	if (newlogfd == -1) {
+		PLOG_W("Couldn't open logfile open('%s')", logfile.c_str());
+		return;
+	}
 	/* Close previous log_fd */
 	if (_log_fd > STDERR_FILENO) {
 		close(_log_fd);
-		_log_fd = STDERR_FILENO;
 	}
-	if (TEMP_FAILURE_RETRY(_log_fd = open(logfile.c_str(),
-				   O_CREAT | O_RDWR | O_APPEND | O_CLOEXEC, 0640)) == -1) {
-		_log_fd = STDERR_FILENO;
-		PLOG_W("Couldn't open logfile open('%s')", logfile.c_str());
-	}
-	_log_fd_isatty = (isatty(_log_fd) == 1);
+	setDupLogFdOr(newlogfd, STDERR_FILENO);
+	close(newlogfd);
 }
 
 void logMsg(enum llevel_t ll, const char* fn, int ln, bool perr, const char* fmt, ...) {
@@ -92,14 +99,12 @@ void logMsg(enum llevel_t ll, const char* fn, int ln, bool perr, const char* fmt
 	if (perr) {
 		snprintf(strerr, sizeof(strerr), "%s", strerror(errno));
 	}
-	struct ll_t {
+	struct {
 		const char* const descr;
 		const char* const prefix;
 		const bool print_funcline;
 		const bool print_time;
-	};
-	static struct ll_t const logLevels[] = {
-	    // clang-format off
+	} static const logLevels[] = {
 	    {"D", "\033[0;4m", true, true},
 	    {"I", "\033[1m", false, true},
 	    {"W", "\033[0;33m", true, true},
@@ -112,29 +117,48 @@ void logMsg(enum llevel_t ll, const char* fn, int ln, bool perr, const char* fmt
 	};
 
 	/* Start printing logs */
+	std::string msg;
 	if (_log_fd_isatty) {
-		dprintf(_log_fd, "%s", logLevels[ll].prefix);
+		msg.append(logLevels[ll].prefix);
+	}
+	if (ll != HELP && ll != HELP_BOLD) {
+		msg.append("[").append(logLevels[ll].descr).append("]");
 	}
 	if (logLevels[ll].print_time) {
-		const auto timestr = util::timeToStr(time(NULL));
-		dprintf(_log_fd, "[%s] ", timestr.c_str());
+		msg.append("[").append(util::timeToStr(time(NULL))).append("]");
 	}
 	if (logLevels[ll].print_funcline) {
-		dprintf(_log_fd, "[%s][%d] %s:%d ", logLevels[ll].descr, (int)getpid(), fn, ln);
+		msg.append("[")
+		    .append(std::to_string(getpid()))
+		    .append("] ")
+		    .append(fn)
+		    .append("():")
+		    .append(std::to_string(ln));
 	}
 
+	char* strp;
 	va_list args;
 	va_start(args, fmt);
-	vdprintf(_log_fd, fmt, args);
+	int ret = vasprintf(&strp, fmt, args);
 	va_end(args);
+	if (ret == -1) {
+		msg.append(" [logs internal]: MEMORY ALLOCATION ERROR");
+	} else {
+		msg.append(" ").append(strp);
+		free(strp);
+	}
 	if (perr) {
-		dprintf(_log_fd, ": %s", strerr);
+		msg.append(": ").append(strerr);
 	}
 	if (_log_fd_isatty) {
-		dprintf(_log_fd, "\033[0m");
+		msg.append("\033[0m");
 	}
-	dprintf(_log_fd, "\n");
+	msg.append("\n");
 	/* End printing logs */
+
+	if (write(_log_fd, msg.c_str(), msg.size()) == -1) {
+		dprintf(_log_fd, "%s", msg.c_str());
+	}
 
 	if (ll == FATAL) {
 		exit(0xff);

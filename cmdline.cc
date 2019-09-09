@@ -92,8 +92,8 @@ struct custom_option custom_opts[] = {
     { { "verbose", no_argument, NULL, 'v' }, "Verbose output" },
     { { "quiet", no_argument, NULL, 'q' }, "Log warning and more important messages only" },
     { { "really_quiet", no_argument, NULL, 'Q' }, "Log fatal messages only" },
-    { { "keep_env", no_argument, NULL, 'e' }, "Pass all environment variables to the child process (default: all envvars are cleared)" },
-    { { "env", required_argument, NULL, 'E' }, "Additional environment variable (can be used multiple times). If the envvar doesn't contain '=' (e.g. just the 'DISPLAY' string), the current envvar value will be used" },
+    { { "keep_env", no_argument, NULL, 'e' }, "Pass all environment variables to the child process (default: all envars are cleared)" },
+    { { "env", required_argument, NULL, 'E' }, "Additional environment variable (can be used multiple times). If the envar doesn't contain '=' (e.g. just the 'DISPLAY' string), the current envar value will be used" },
     { { "keep_caps", no_argument, NULL, 0x0501 }, "Don't drop any capabilities" },
     { { "cap", required_argument, NULL, 0x0509 }, "Retain this capability, e.g. CAP_PTRACE (can be specified multiple times)" },
     { { "silent", no_argument, NULL, 0x0502 }, "Redirect child process' fd:0/1/2 to /dev/null" },
@@ -108,6 +108,7 @@ struct custom_option custom_opts[] = {
     { { "rlimit_nofile", required_argument, NULL, 0x0205 }, "RLIMIT_NOFILE, 'max' or 'hard' for the current hard limit, 'def' or 'soft' for the current soft limit, 'inf' for RLIM64_INFINITY (default: 32)" },
     { { "rlimit_nproc", required_argument, NULL, 0x0206 }, "RLIMIT_NPROC, 'max' or 'hard' for the current hard limit, 'def' or 'soft' for the current soft limit, 'inf' for RLIM64_INFINITY (default: 'soft')" },
     { { "rlimit_stack", required_argument, NULL, 0x0207 }, "RLIMIT_STACK in MB, 'max' or 'hard' for the current hard limit, 'def' or 'soft' for the current soft limit, 'inf' for RLIM64_INFINITY (default: 'soft')" },
+    { { "disable_rlimits", no_argument, NULL, 0x0208 }, "Disable all rlimits, default to limits set by parent" },
     { { "persona_addr_compat_layout", no_argument, NULL, 0x0301 }, "personality(ADDR_COMPAT_LAYOUT)" },
     { { "persona_mmap_page_zero", no_argument, NULL, 0x0302 }, "personality(MMAP_PAGE_ZERO)" },
     { { "persona_read_implies_exec", no_argument, NULL, 0x0303 }, "personality(READ_IMPLIES_EXEC)" },
@@ -133,6 +134,7 @@ struct custom_option custom_opts[] = {
     { { "seccomp_policy", required_argument, NULL, 'P' }, "Path to file containing seccomp-bpf policy (see kafel/)" },
     { { "seccomp_string", required_argument, NULL, 0x0901 }, "String with kafel seccomp-bpf policy (see kafel/)" },
     { { "seccomp_log", no_argument, NULL, 0x0902 }, "Use SECCOMP_FILTER_FLAG_LOG. Log all actions except SECCOMP_RET_ALLOW). Supported since kernel version 4.14" },
+    { { "nice_level", required_argument, NULL, 0x0903 }, "Set jailed process niceness (-20 is highest -priority, 19 is lowest). By default, set to 19" },
     { { "cgroup_mem_max", required_argument, NULL, 0x0801 }, "Maximum number of bytes to use in the group (default: '0' - disabled)" },
     { { "cgroup_mem_mount", required_argument, NULL, 0x0802 }, "Location of memory cgroup FS (default: '/sys/fs/cgroup/memory')" },
     { { "cgroup_mem_parent", required_argument, NULL, 0x0803 }, "Which pre-existing memory cgroup to use as a parent (default: 'NSJAIL')" },
@@ -143,8 +145,10 @@ struct custom_option custom_opts[] = {
     { { "cgroup_net_cls_mount", required_argument, NULL, 0x0822 }, "Location of net_cls cgroup FS (default: '/sys/fs/cgroup/net_cls')" },
     { { "cgroup_net_cls_parent", required_argument, NULL, 0x0823 }, "Which pre-existing net_cls cgroup to use as a parent (default: 'NSJAIL')" },
     { { "cgroup_cpu_ms_per_sec", required_argument, NULL, 0x0831 }, "Number of milliseconds of CPU time per second that the process group can use (default: '0' - no limit)" },
-    { { "cgroup_cpu_mount", required_argument, NULL, 0x0822 }, "Location of cpu cgroup FS (default: '/sys/fs/cgroup/net_cls')" },
+    { { "cgroup_cpu_mount", required_argument, NULL, 0x0832 }, "Location of cpu cgroup FS (default: '/sys/fs/cgroup/net_cls')" },
     { { "cgroup_cpu_parent", required_argument, NULL, 0x0833 }, "Which pre-existing cpu cgroup to use as a parent (default: 'NSJAIL')" },
+    { { "cgroupv2_mount", required_argument, NULL, 0x0834}, "Location of cgroupv2 directory (default: '/sys/fs/cgroup')"},
+    { { "use_cgroupv2", no_argument, NULL, 0x0835}, "Use cgroup v2"},
     { { "iface_no_lo", no_argument, NULL, 0x700 }, "Don't bring the 'lo' interface up" },
     { { "iface_own", required_argument, NULL, 0x704 }, "Move this existing network interface into the new NET namespace. Can be specified multiple times" },
     { { "macvlan_iface", required_argument, NULL, 'I' }, "Interface which will be cloned (MACVLAN) and put inside the subprocess' namespace as 'vs'" },
@@ -195,7 +199,7 @@ void addEnv(nsjconf_t* nsjconf, const std::string& env) {
 	}
 	char* e = getenv(env.c_str());
 	if (!e) {
-		LOG_W("Requested to use the '%s' envvar, but it's not set. It'll be ignored",
+		LOG_W("Requested to use the '%s' envar, but it's not set. It'll be ignored",
 		    env.c_str());
 		return;
 	}
@@ -238,8 +242,8 @@ void logParams(nsjconf_t* nsjconf) {
 	    nsjconf->max_cpus);
 
 	for (const auto& p : nsjconf->mountpts) {
-		LOG_I("%s: %s", p.is_symlink ? "Symlink" : "Mount point",
-		    mnt::describeMountPt(p).c_str());
+		LOG_I(
+		    "%s: %s", p.is_symlink ? "Symlink" : "Mount", mnt::describeMountPt(p).c_str());
 	}
 	for (const auto& uid : nsjconf->uids) {
 		LOG_I("Uid map: inside_uid:%lu outside_uid:%lu count:%zu newuidmap:%s",
@@ -247,9 +251,8 @@ void logParams(nsjconf_t* nsjconf) {
 		    uid.is_newidmap ? "true" : "false");
 		if (uid.outside_id == 0 && nsjconf->clone_newuser) {
 			LOG_W(
-			    "Process will be UID/EUID=0 in the global user namespace, "
-			    "and will have user "
-			    "root-level access to files");
+			    "Process will be UID/EUID=0 in the global user namespace, and will "
+			    "have user root-level access to files");
 		}
 	}
 	for (const auto& gid : nsjconf->gids) {
@@ -258,9 +261,8 @@ void logParams(nsjconf_t* nsjconf) {
 		    gid.is_newidmap ? "true" : "false");
 		if (gid.outside_id == 0 && nsjconf->clone_newuser) {
 			LOG_W(
-			    "Process will be GID/EGID=0 in the global user namespace, "
-			    "and will have group "
-			    "root-level access to files");
+			    "Process will be GID/EGID=0 in the global user namespace, and will "
+			    "have group root-level access to files");
 		}
 	}
 }
@@ -301,16 +303,23 @@ static std::string argFromVec(const std::vector<std::string>& vec, size_t pos) {
 }
 
 static bool setupArgv(nsjconf_t* nsjconf, int argc, char** argv, int optind) {
-	for (int i = optind; i < argc; i++) {
-		nsjconf->argv.push_back(argv[i]);
+	/*
+	 * If user provided cmdline via nsjail [opts] -- [cmdline], then override the one from the
+	 * config file
+	 */
+	if (optind < argc) {
+		nsjconf->argv.clear();
+		for (int i = optind; i < argc; i++) {
+			nsjconf->argv.push_back(argv[i]);
+		}
 	}
-	if (nsjconf->argv.empty()) {
-		cmdlineUsage(argv[0]);
-		LOG_E("No command provided");
-		return false;
+	if (nsjconf->exec_file.empty() && nsjconf->argv.size() > 0) {
+		nsjconf->exec_file = nsjconf->argv[0];
 	}
 	if (nsjconf->exec_file.empty()) {
-		nsjconf->exec_file = nsjconf->argv[0];
+		cmdlineUsage(argv[0]);
+		LOG_E("No command-line provided");
+		return false;
 	}
 
 	if (nsjconf->use_execveat) {
@@ -394,13 +403,14 @@ std::unique_ptr<nsjconf_t> parseArgs(int argc, char* argv[]) {
 	nsjconf->keep_env = false;
 	nsjconf->keep_caps = false;
 	nsjconf->disable_no_new_privs = false;
-	nsjconf->rl_as = 512 * (1024 * 1024);
-	nsjconf->rl_core = 0;
-	nsjconf->rl_cpu = 600;
-	nsjconf->rl_fsize = 1 * (1024 * 1024);
-	nsjconf->rl_nofile = 32;
+	nsjconf->rl_as = 4096ULL * (1024ULL * 1024ULL);
+	nsjconf->rl_core = 0ULL;
+	nsjconf->rl_cpu = 600ULL;
+	nsjconf->rl_fsize = 1ULL * (1024ULL * 1024ULL);
+	nsjconf->rl_nofile = 32ULL;
 	nsjconf->rl_nproc = parseRLimit(RLIMIT_NPROC, "soft", 1);
 	nsjconf->rl_stack = parseRLimit(RLIMIT_STACK, "soft", 1);
+	nsjconf->disable_rl = false;
 	nsjconf->personality = 0;
 	nsjconf->clone_newnet = true;
 	nsjconf->clone_newuser = true;
@@ -429,16 +439,20 @@ std::unique_ptr<nsjconf_t> parseArgs(int argc, char* argv[]) {
 	nsjconf->cgroup_cpu_mount = "/sys/fs/cgroup/cpu";
 	nsjconf->cgroup_cpu_parent = "NSJAIL";
 	nsjconf->cgroup_cpu_ms_per_sec = 0U;
+	nsjconf->cgroupv2_mount = "/sys/fs/cgroup";
+	nsjconf->use_cgroupv2 = false;
 	nsjconf->iface_lo = true;
 	nsjconf->iface_vs_ip = "0.0.0.0";
 	nsjconf->iface_vs_nm = "255.255.255.0";
 	nsjconf->iface_vs_gw = "0.0.0.0";
 	nsjconf->iface_vs_ma = "";
 	nsjconf->orig_uid = getuid();
+	nsjconf->orig_euid = geteuid();
 	nsjconf->num_cpus = sysconf(_SC_NPROCESSORS_ONLN);
 	nsjconf->seccomp_fprog.filter = NULL;
 	nsjconf->seccomp_fprog.len = 0;
 	nsjconf->seccomp_log = false;
+	nsjconf->nice_level = 19;
 	nsjconf->wait_for_debugger = false;
 
 	nsjconf->openfds.push_back(STDIN_FILENO);
@@ -481,6 +495,10 @@ std::unique_ptr<nsjconf_t> parseArgs(int argc, char* argv[]) {
 			nsjconf->chroot = optarg;
 			break;
 		case 'p':
+			if (!util::isANumber(optarg)) {
+				LOG_E("Couldn't parse TCP port '%s'", optarg);
+				return nullptr;
+			}
 			nsjconf->port = strtoumax(optarg, NULL, 0);
 			nsjconf->mode = MODE_LISTEN_TCP;
 			break;
@@ -538,6 +556,9 @@ std::unique_ptr<nsjconf_t> parseArgs(int argc, char* argv[]) {
 			break;
 		case 0x0207:
 			nsjconf->rl_stack = parseRLimit(RLIMIT_STACK, optarg, (1024 * 1024));
+			break;
+		case 0x0208:
+			nsjconf->disable_rl = true;
 			break;
 		case 0x0301:
 			nsjconf->personality |= ADDR_COMPAT_LAYOUT;
@@ -817,6 +838,12 @@ std::unique_ptr<nsjconf_t> parseArgs(int argc, char* argv[]) {
 		case 0x833:
 			nsjconf->cgroup_cpu_parent = optarg;
 			break;
+		case 0x834:
+			nsjconf->cgroupv2_mount = optarg;
+			break;
+		case 0x835:
+			nsjconf->use_cgroupv2 = true;
+			break;
 		case 'P':
 			nsjconf->kafel_file_path = optarg;
 			break;
@@ -826,6 +853,8 @@ std::unique_ptr<nsjconf_t> parseArgs(int argc, char* argv[]) {
 		case 0x902:
 			nsjconf->seccomp_log = true;
 			break;
+		case 0x903:
+			nsjconf->nice_level = (int)strtol(optarg, NULL, 0);
 		case 0x10001:
 			nsjconf->wait_for_debugger = true;
 			break;

@@ -112,7 +112,7 @@ static cap_user_data_t getCaps() {
 	const struct __user_cap_header_struct cap_hdr = {
 	    .version = _LINUX_CAPABILITY_VERSION_3, .pid = 0,
 	};
-	if (syscall(__NR_capget, &cap_hdr, &cap_data) == -1) {
+	if (util::syscall(__NR_capget, (uintptr_t)&cap_hdr, (uintptr_t)&cap_data) == -1) {
 		PLOG_W("capget() failed");
 		return NULL;
 	}
@@ -123,7 +123,7 @@ static bool setCaps(const cap_user_data_t cap_data) {
 	const struct __user_cap_header_struct cap_hdr = {
 	    .version = _LINUX_CAPABILITY_VERSION_3, .pid = 0,
 	};
-	if (syscall(__NR_capset, &cap_hdr, cap_data) == -1) {
+	if (util::syscall(__NR_capset, (uintptr_t)&cap_hdr, (uintptr_t)cap_data) == -1) {
 		PLOG_W("capset() failed");
 		return false;
 	}
