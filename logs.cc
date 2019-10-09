@@ -130,7 +130,7 @@ void logMsg(enum llevel_t ll, const char* fn, int ln, bool perr, const char* fmt
 		    .append(std::to_string(getpid()))
 		    .append("] ")
 		    .append(fn)
-		    .append("():")
+		    .append(":")
 		    .append(std::to_string(ln));
 	}
 
