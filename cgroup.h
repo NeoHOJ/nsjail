@@ -32,6 +32,7 @@ namespace cgroup {
 bool initNsFromParent(nsjconf_t* nsjconf, pid_t pid);
 bool initNs(void);
 void finishFromParent(nsjconf_t* nsjconf, pid_t pid);
+void printStat(nsjconf_t* nsjconf, pid_t pid);
 
 }  // namespace cgroup
 

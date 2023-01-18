@@ -116,6 +116,7 @@ void logMsg(enum llevel_t ll, const char* fn, int ln, bool perr, const char* fmt
 	    {"W", "\033[0;33m", true, true},
 	    {"E", "\033[1;31m", true, true},
 	    {"F", "\033[7;35m", true, true},
+	    {"S", "\033[1;34m", true, false}, /* for LOG_STAT */
 	    {"HR", "\033[0m", false, false},
 	    {"HB", "\033[1m", false, false},
 	};
@@ -136,7 +137,7 @@ void logMsg(enum llevel_t ll, const char* fn, int ln, bool perr, const char* fmt
 		    .append(std::to_string(getpid()))
 		    .append("] ")
 		    .append(fn)
-		    .append("():")
+		    .append(":")
 		    .append(std::to_string(ln));
 	}
 

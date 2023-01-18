@@ -320,6 +320,10 @@ const std::string timeToStr(time_t t) {
 	return timestr;
 }
 
+unsigned long int timespecToMiliseconds(struct timespec const* ts) {
+	return ts->tv_sec * 1000U + ts->tv_nsec / 1000000;
+}
+
 std::vector<std::string> strSplit(const std::string str, char delim) {
 	std::vector<std::string> vec;
 	std::istringstream stream(str);

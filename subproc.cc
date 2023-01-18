@@ -34,8 +34,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/prctl.h>	  /* for dumpable flag */
+#include <sys/resource.h> /* for {get,set}rlimit */
 #include <sys/socket.h>
 #include <sys/syscall.h>
+#include <sys/time.h> /* for setitimer, should move it to nsjail.cc? */
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -136,6 +139,29 @@ static bool resetEnv(void) {
 	return true;
 }
 
+static int raiseRtPrioToMax() {
+	/* set the static priority based on hard ulimit */
+	struct rlimit lim;
+	if (getrlimit(RLIMIT_RTPRIO, &lim) < 0) {
+		PLOG_W("Failed to get rlimit for parent");
+		return -1;
+	}
+
+	if (lim.rlim_max == 0) {
+		LOG_W("Setting real-time priority requires non-zero rtprio hard limit");
+		return -1;
+	}
+
+	lim.rlim_cur = lim.rlim_max;
+	LOG_D("setrlimit(cur=%zd, max=%zd) on parent", lim.rlim_cur, lim.rlim_max);
+	if (setrlimit(RLIMIT_RTPRIO, &lim) < 0) {
+		PLOG_W("Failed to setrlimit() on parent");
+		return -1;
+	}
+
+	return std::max(sched_get_priority_max(SCHED_FIFO), (int)lim.rlim_cur);
+}
+
 static const char kSubprocDoneChar = 'D';
 static const char kSubprocErrorChar = 'E';
 
@@ -201,6 +227,15 @@ static void newProc(nsjconf_t* nsjconf, int netfd, int fd_in, int fd_out, int fd
 		argv.push_back(s.c_str());
 	}
 	argv.push_back(nullptr);
+
+	if (nsjconf->wait_for_debugger) {
+		LOG_I("Waiting for the debugger to attach...");
+		if (raise(SIGSTOP) < 0) {
+			PLOG_E("Failed to raise SIGSTOP");
+			return;
+		}
+		LOG_I("Continued from stopped state");
+	}
 
 	LOG_D("Exec: %s, Args: [%s]", util::StrQuote(nsjconf->exec_file).c_str(),
 	    concatArgs(argv).c_str());
@@ -333,9 +368,25 @@ static int reapProc(nsjconf_t* nsjconf, pid_t pid, bool should_wait = false) {
 	int status;
 
 	if (wait4(pid, &status, should_wait ? 0 : WNOHANG, NULL) == pid) {
+		struct timespec timespec_cur = {};
+		uint64_t now_in_ms = 0;
+
+		if (clock_gettime(CLOCK_MONOTONIC_RAW, &timespec_cur) < 0) {
+			LOG_W(
+			    "Failed to get process end time for pid %d. The time report will be "
+			    "unreliable.",
+			    pid);
+		} else {
+			now_in_ms = util::timespecToMiliseconds(&timespec_cur);
+			LOG_D("Record process end time: (%zd, %zd)", timespec_cur.tv_sec,
+			    timespec_cur.tv_nsec);
+		}
+
 		if (nsjconf->use_cgroupv2) {
+			LOG_W("Statistics logging for cgroup2 is not implemented yet.");
 			cgroup2::finishFromParent(nsjconf, pid);
 		} else {
+			cgroup::printStat(nsjconf, pid);
 			cgroup::finishFromParent(nsjconf, pid);
 		}
 
@@ -345,9 +396,19 @@ static int reapProc(nsjconf_t* nsjconf, pid_t pid, bool should_wait = false) {
 			remote_txt = p->second.remote_txt;
 		}
 
+		uint64_t time_alive = (uint64_t)-1LL;
+		if (p == nsjconf->pids.end()) {
+			LOG_E("Couldn't find pid element in the subproc list for pid=%d", pid);
+		} else if (p->second.start_accu != 0LL && now_in_ms != 0LL) {
+			time_alive = now_in_ms - p->second.start_accu;
+		}
+		LOG_STAT("%d:time = %" PRId64, pid, time_alive);
+
 		if (WIFEXITED(status)) {
 			LOG_I("pid=%d (%s) exited with status: %d, (PIDs left: %d)", pid,
 			    remote_txt.c_str(), WEXITSTATUS(status), countProc(nsjconf) - 1);
+			LOG_STAT("%d:exit_normally = true", pid);
+			LOG_STAT("%d:exit_code = %d", pid, WEXITSTATUS(status));
 			removeProc(nsjconf, pid);
 			return WEXITSTATUS(status);
 		}
@@ -355,6 +416,8 @@ static int reapProc(nsjconf_t* nsjconf, pid_t pid, bool should_wait = false) {
 			LOG_I("pid=%d (%s) terminated with signal: %s (%d), (PIDs left: %d)", pid,
 			    remote_txt.c_str(), util::sigName(WTERMSIG(status)).c_str(),
 			    WTERMSIG(status), countProc(nsjconf) - 1);
+			LOG_STAT("%d:exit_normally = false", pid);
+			LOG_STAT("%d:exit_code = %d", pid, WTERMSIG(status));
 			removeProc(nsjconf, pid);
 			return 128 + WTERMSIG(status);
 		}
@@ -376,18 +439,30 @@ int reapProc(nsjconf_t* nsjconf) {
 		}
 		if (si.si_code == CLD_KILLED && si.si_status == SIGSYS) {
 			seccompViolation(nsjconf, &si);
+			LOG_STAT("%d:seccomp_violation = true", si.si_pid);
+		} else if (nsjconf->seccomp_fprog.filter) {
+			/* show "not violating" message only when BPF is set */
+			LOG_STAT("%d:seccomp_violation = false", si.si_pid);
 		}
 		rv = reapProc(nsjconf, si.si_pid);
 	}
 
-	time_t now = time(NULL);
+	/* time_t now = time(NULL); */
+	struct timespec now;
+	if (clock_gettime(CLOCK_MONOTONIC_RAW, &now) < 0) {
+		LOG_F("Failed to get current time");
+		return 0xff;
+	}
+
 	for (const auto& p : nsjconf->pids) {
 		if (nsjconf->tlimit == 0) {
 			continue;
 		}
 		pid_t pid = p.first;
-		time_t diff = now - p.second.start;
-		if ((uint64_t)diff >= nsjconf->tlimit) {
+		/* time_t diff = now - p.second.start; */
+		uint64_t diff = util::timespecToMiliseconds(&now) - p.second.start_accu;
+		/* if ((uint64_t)diff >= nsjconf->tlimit) { */
+		if (diff >= (uint64_t)nsjconf->tlimit * 1000UL) {
 			LOG_I("pid=%d run time >= time limit (%ld >= %" PRIu64 ") (%s). Killing it",
 			    pid, (long)diff, nsjconf->tlimit, p.second.remote_txt.c_str());
 			/*
@@ -455,6 +530,12 @@ pid_t runChild(nsjconf_t* nsjconf, int netfd, int fd_in, int fd_out, int fd_err)
 	flags |= (nsjconf->clone_newcgroup ? CLONE_NEWCGROUP : 0);
 	flags |= (nsjconf->clone_newtime ? CLONE_NEWTIME : 0);
 
+	/* remains dumpable after setuid.
+	   XXX: make this operation configurable */
+	if (prctl(PR_SET_DUMPABLE, 1UL, 0UL, 0UL, 0UL) < 0) {
+		LOG_W("PR_SET_DUMPABLE(1) failed");
+	}
+
 	if (nsjconf->mode == MODE_STANDALONE_EXECVE) {
 		LOG_D("unshare(flags: %s)", cloneFlagsToStr(flags).c_str());
 		if (unshare(flags) == -1) {
@@ -475,6 +556,23 @@ pid_t runChild(nsjconf_t* nsjconf, int netfd, int fd_in, int fd_out, int fd_err)
 	int child_fd = sv[0];
 	int parent_fd = sv[1];
 
+	/* set parent rtprio just before doing clone().
+	   failing at this operation is okay.
+	 */
+	int rtprio = raiseRtPrioToMax();
+
+	if (rtprio > 0) {
+		struct sched_param param;
+		param.sched_priority = rtprio;
+
+		if (sched_setscheduler(0, SCHED_FIFO, &param) < 0) {
+			PLOG_W("Failed to set real-time scheduler. THis may reduce stability");
+		} else {
+			LOG_I("Set real-time priority on parent %d to %d", getpid(),
+			    param.sched_priority);
+		}
+	}
+
 	pid_t pid = cloneProc(flags, SIGCHLD);
 	if (pid == 0) {
 		close(parent_fd);
@@ -492,10 +590,33 @@ pid_t runChild(nsjconf_t* nsjconf, int netfd, int fd_in, int fd_out, int fd_err)
 	}
 	addProc(nsjconf, pid, netfd);
 
+	/* if parent fails to set this option, then skip setting for the child */
+	if (rtprio > 0) {
+		struct sched_param param;
+		param.sched_priority = rtprio - 1;
+
+		if (sched_setscheduler(pid, SCHED_FIFO, &param) < 0) {
+			PLOG_W(
+			    "Failed to set real-time scheduler of child (%d). This may reduce "
+			    "stability",
+			    pid);
+		} else {
+			LOG_I(
+			    "Set real-time priority on child %d to %d", pid, param.sched_priority);
+		}
+	}
+
 	if (!initParent(nsjconf, pid, parent_fd)) {
 		close(parent_fd);
 		return -1;
 	}
+
+	const auto& p = nsjconf->pids.find(pid);
+	int tstart = -1;
+	if (p != nsjconf->pids.end()) {
+		tstart = (int)p->second.start;
+	}
+	LOG_STAT("%d:process_spawned = %d", pid, tstart);
 
 	char rcvChar;
 	if (util::readFromFd(parent_fd, &rcvChar, sizeof(rcvChar)) == sizeof(rcvChar) &&
@@ -503,6 +624,39 @@ pid_t runChild(nsjconf_t* nsjconf, int netfd, int fd_in, int fd_out, int fd_err)
 		LOG_W("Received error message from the child process before it has been executed");
 		close(parent_fd);
 		return -1;
+	}
+
+	/* start timer once child is ready (since fd is closed AFTER execv/execvat) */
+	{
+		struct timespec ts = {};
+		int ret = clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
+		const auto& p = nsjconf->pids.find(pid);
+		if (p == nsjconf->pids.end()) {
+			/* we can do nothing here */
+			LOG_E("Couldn't find pid element in the subproc list for pid=%d", pid);
+		} else if (ret < 0) {
+			LOG_W(
+			    "Failed to get process start time for pid %d. The time report will be "
+			    "unreliable",
+			    pid);
+			p->second.start_accu = 0LL;
+		} else {
+			LOG_D("Record process start time (%zd, %zd)", ts.tv_sec, ts.tv_nsec);
+			p->second.start_accu = util::timespecToMiliseconds(&ts);
+		}
+	}
+
+	/* re-arm the timer to set the real time limit */
+	struct itimerval it = {
+	    // clang-format off
+		.it_interval = {.tv_sec = 1, .tv_usec = 0},
+		.it_value = {.tv_sec = 1, .tv_usec = 0},
+	    // clang-format on
+	};
+	if (setitimer(ITIMER_REAL, &it, NULL) == -1) {
+		PLOG_E("setitimer(ITIMER_REAL)");
+		close(parent_fd);
+		return false;
 	}
 
 	close(parent_fd);

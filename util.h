@@ -57,6 +57,7 @@ bool isANumber(const char* s);
 uint64_t rnd64(void);
 const std::string sigName(int signo);
 const std::string timeToStr(time_t t);
+unsigned long int timespecToMiliseconds(struct timespec const* ts);
 std::vector<std::string> strSplit(const std::string str, char delim);
 long syscall(long sysno, uintptr_t a0 = 0, uintptr_t a1 = 0, uintptr_t a2 = 0, uintptr_t a3 = 0,
     uintptr_t a4 = 0, uintptr_t a5 = 0);

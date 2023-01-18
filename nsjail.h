@@ -36,6 +36,9 @@
 #include <string>
 #include <vector>
 
+#define PROGRAM_NAME "nsjail for HOJ"
+#define VERSION_STRING "v3.3-c7c0adf-hoj-1.0-beta.2.dev"
+
 static const int nssigs[] = {
     SIGINT,
     SIGQUIT,
@@ -50,9 +53,11 @@ static const int nssigs[] = {
 
 struct pids_t {
 	time_t start;
+	uint64_t start_accu;
 	std::string remote_txt;
 	struct sockaddr_in6 remote_addr;
 	int pid_syscall_fd;
+	bool wait_for_debugger;
 };
 
 struct mount_t {
@@ -134,6 +139,7 @@ struct nsjconf_t {
 	bool is_silent;
 	bool stderr_to_null;
 	bool skip_setsid;
+	bool wait_for_debugger;
 	unsigned int max_conns;
 	unsigned int max_conns_per_ip;
 	std::string proc_path;

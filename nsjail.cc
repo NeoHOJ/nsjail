@@ -337,6 +337,7 @@ int main(int argc, char* argv[]) {
 		PLOG_F("daemon");
 	}
 	cmdline::logParams(nsjconf.get());
+	LOG_STAT("info = '" PROGRAM_NAME ": " VERSION_STRING "'");
 	if (!nsjail::setSigHandlers()) {
 		LOG_F("nsjail::setSigHandlers() failed");
 	}

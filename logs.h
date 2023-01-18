@@ -53,6 +53,10 @@ namespace logs {
 	if (logs::getLogLevel() <= logs::FATAL) {                                      \
 		logs::logMsg(logs::FATAL, __FUNCTION__, __LINE__, false, __VA_ARGS__); \
 	}
+#define LOG_STAT(...)                                                        \
+	if (logs::getLogLevel() <= logs::STAT) {                             \
+		logs::logMsg(logs::STAT, "__STAT__", 0, false, __VA_ARGS__); \
+	}
 
 #define PLOG_D(...)                                                                   \
 	if (logs::getLogLevel() <= logs::DEBUG) {                                     \
@@ -81,6 +85,7 @@ enum llevel_t {
 	WARNING,
 	ERROR,
 	FATAL,
+	STAT,
 	HELP,
 	HELP_BOLD,
 };

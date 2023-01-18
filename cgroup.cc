@@ -57,6 +57,20 @@ static bool writeToCgroup(
 	return true;
 }
 
+static bool readIntFromCgroup(
+    const std::string& cgroup_path, long long int* ptr, const std::string& what) {
+	static const int ndigits = 24; /* max of sint64 is about 9.2e18 */
+	char buf[ndigits];
+	if (util::readFromFile(cgroup_path.c_str(), buf, ndigits) < 0) {
+		LOG_W("Could not read %s from %s", what.c_str(), cgroup_path.c_str());
+		return false;
+	}
+
+	*ptr = atoll(buf);
+	LOG_D("Reading '%s': %lld", cgroup_path.c_str(), *ptr);
+	return true;
+}
+
 static bool addPidToTaskList(const std::string& cgroup_path, pid_t pid) {
 	std::string pid_str = std::to_string(pid);
 	std::string tasks_path = cgroup_path + "/tasks";
@@ -88,12 +102,22 @@ static bool initNsFromParentMem(nsjconf_t* nsjconf, pid_t pid) {
 		std::string mem_max_str = std::to_string(nsjconf->cgroup_mem_max);
 		RETURN_ON_FAILURE(writeToCgroup(mem_cgroup_path + "/memory.limit_in_bytes",
 		    mem_max_str, "memory cgroup max limit"));
-	}
 
-	if (memsw_max > (size_t)0) {
-		std::string mem_memsw_max_str = std::to_string(memsw_max);
-		RETURN_ON_FAILURE(writeToCgroup(mem_cgroup_path + "/memory.memsw.limit_in_bytes",
-		    mem_memsw_max_str, "memory+Swap cgroup max limit"));
+		if (memsw_max > (size_t)0) {
+			std::string mem_memsw_max_str = std::to_string(memsw_max);
+			RETURN_ON_FAILURE(
+			    writeToCgroup(mem_cgroup_path + "/memory.memsw.limit_in_bytes",
+				mem_memsw_max_str, "memory+Swap cgroup max limit"));
+		}
+
+		if (nsjconf->cgroup_mem_max > (size_t)0 && nsjconf->cgroup_mem_max == (size_t)0) {
+			/*
+			 * Force swap to be disabled so that the process is also killed as long as
+			 * it reaches limit
+			 */
+			RETURN_ON_FAILURE(writeToCgroup(mem_cgroup_path + "/memory.swappiness", "0",
+			    "memory cgroup swappiness"));
+		}
 	}
 
 	return addPidToTaskList(mem_cgroup_path, pid);
@@ -196,6 +220,32 @@ void finishFromParent(nsjconf_t* nsjconf, pid_t pid) {
 					      std::to_string(pid);
 		removeCgroup(cpu_cgroup_path);
 	}
+}
+
+void printStat(nsjconf_t* nsjconf, pid_t pid) {
+	if (nsjconf->cgroup_mem_max == (size_t)0) {
+		return;
+	}
+
+	std::string mem_cgroup_base = nsjconf->cgroup_mem_mount + '/' + nsjconf->cgroup_mem_parent +
+				      "/NSJAIL." + std::to_string(pid);
+
+	long long int tmp = -1;
+	bool success;
+
+	success = readIntFromCgroup(
+	    mem_cgroup_base + "/memory.max_usage_in_bytes", &tmp, "memory cgroup max usage");
+	if (!success) {
+		tmp = -1;
+	}
+	LOG_STAT("%d:cgroup_memory_max_usage = %lld", pid, tmp);
+
+	success =
+	    readIntFromCgroup(mem_cgroup_base + "/memory.failcnt", &tmp, "memory cgroup failcnt");
+	if (!success) {
+		tmp = -1;
+	}
+	LOG_STAT("%d:cgroup_memory_failcnt = %lld", pid, tmp);
 }
 
 bool initNs(void) {
