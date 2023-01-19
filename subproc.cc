@@ -464,7 +464,7 @@ int reapProc(nsjconf_t* nsjconf) {
 		/* if ((uint64_t)diff >= nsjconf->tlimit) { */
 		if (diff >= (uint64_t)nsjconf->tlimit * 1000UL) {
 			LOG_I("pid=%d run time >= time limit (%ld >= %" PRIu64 ") (%s). Killing it",
-			    pid, (long)diff, nsjconf->tlimit, p.second.remote_txt.c_str());
+			    pid, (long)diff, nsjconf->tlimit * 1000UL, p.second.remote_txt.c_str());
 			/*
 			 * Probably a kernel bug - some processes cannot be killed with KILL if
 			 * they're namespaced, and in a stopped state
@@ -566,7 +566,7 @@ pid_t runChild(nsjconf_t* nsjconf, int netfd, int fd_in, int fd_out, int fd_err)
 		param.sched_priority = rtprio;
 
 		if (sched_setscheduler(0, SCHED_FIFO, &param) < 0) {
-			PLOG_W("Failed to set real-time scheduler. THis may reduce stability");
+			PLOG_W("Failed to set real-time scheduler. This may reduce stability");
 		} else {
 			LOG_I("Set real-time priority on parent %d to %d", getpid(),
 			    param.sched_priority);
@@ -646,7 +646,9 @@ pid_t runChild(nsjconf_t* nsjconf, int netfd, int fd_in, int fd_out, int fd_err)
 		}
 	}
 
-	/* re-arm the timer to set the real time limit */
+	/* re-arm the timer to measure the real time limit more precisely.
+	 * previously set in nsjail.cc.
+	 */
 	struct itimerval it = {
 	    // clang-format off
 		.it_interval = {.tv_sec = 1, .tv_usec = 0},
@@ -654,9 +656,8 @@ pid_t runChild(nsjconf_t* nsjconf, int netfd, int fd_in, int fd_out, int fd_err)
 	    // clang-format on
 	};
 	if (setitimer(ITIMER_REAL, &it, NULL) == -1) {
-		PLOG_E("setitimer(ITIMER_REAL)");
-		close(parent_fd);
-		return false;
+		PLOG_W("setitimer(ITIMER_REAL)");
+		/* unlikely, but failing it is okay (erroring for 1 second at most) */
 	}
 
 	close(parent_fd);

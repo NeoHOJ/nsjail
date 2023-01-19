@@ -99,7 +99,7 @@ message NsJailConfig {
     optional uint32 max_conns_per_ip = 10 [default = 0];
 
     /* Wall-time time limit for commands */
-    optional uint32 time_limit = 11 [default = 600];
+    optional uint32 time_limit = 11 [default = 0];
     /* Should nsjail go into background? */
     optional bool daemon = 12 [default = false];
     /* Maximum number of CPUs to use: 0 - no limit */
