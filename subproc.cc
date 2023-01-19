@@ -383,7 +383,7 @@ static int reapProc(nsjconf_t* nsjconf, pid_t pid, bool should_wait = false) {
 		}
 
 		if (nsjconf->use_cgroupv2) {
-			LOG_W("Statistics logging for cgroup2 is not implemented yet.");
+			cgroup2::printStat(nsjconf, pid);
 			cgroup2::finishFromParent(nsjconf, pid);
 		} else {
 			cgroup::printStat(nsjconf, pid);

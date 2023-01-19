@@ -111,6 +111,91 @@ static bool writeToCgroup(
 	return true;
 }
 
+static bool readIntFromCgroup(
+    const std::string &cgroup_path, const std::string &resource, long long int *ptr) {
+	static const int ndigits = 24; /* max of sint64 is about 9.2e18 */
+	char buf[ndigits];
+	const std::string fname = cgroup_path + "/" + resource;
+	if (util::readFromFile(fname.c_str(), buf, ndigits) < 0) {
+		LOG_W("Could not read %s from %s", resource.c_str(), cgroup_path.c_str());
+		return false;
+	}
+
+	*ptr = atoll(buf);
+	LOG_D("Reading '%s': %lld", fname.c_str(), *ptr);
+	return true;
+}
+
+static bool readKeyedIntFromCgroup(const std::string &cgroup_path, const std::string &resource,
+    const std::string key, long long int *ptr) {
+	static const size_t bufsize = 128;
+	const std::string fname = cgroup_path + "/" + resource;
+	int fd = TEMP_FAILURE_RETRY(open(fname.c_str(), O_RDONLY | O_CLOEXEC));
+	if (fd == -1) {
+		PLOG_E("open('%s', O_RDONLY|O_CLOEXEC)", fname.c_str());
+		return false;
+	}
+	FILE *f = fdopen(fd, "r");
+	if (f == NULL) {
+		PLOG_E("fdopen(fd=%d)", fd);
+		close(fd);
+		return false;
+	}
+
+	char buf[bufsize];
+	bool found = false;
+	char *valptr = NULL;
+	while (!feof(f)) {
+		/* to detect the usage of last byte; any non-zero char should work */
+		buf[bufsize - 1] = '\n';
+		char *res = fgets(buf, bufsize, f);
+		if (res == NULL) {
+			if (errno == EINTR || feof(f)) {
+				continue;
+			}
+			PLOG_E("fgets(fd=%d)", fd);
+			fclose(f);
+			return false;
+		}
+		if (buf[bufsize - 1] == '\0' && buf[bufsize - 2] != '\n') {
+			/* should not happen if the buffer size is large enough,
+			 * so we simply bail out here
+			 */
+			PLOG_E("Couldn't fit a line of '%s' into buffer (len=%zd)", fname.c_str(),
+			    bufsize);
+			fclose(f);
+			return false;
+		}
+		if (strncmp(res, key.c_str(), key.size()) == 0) {
+			found = true;
+		}
+		char *psep = strchr(res, ' ');
+		if (psep == NULL) {
+			LOG_E("Expect key value pairs in '%s'", fname.c_str());
+			fclose(f);
+			return false;
+		}
+		*psep = '\0';
+		valptr = psep + 1;
+		/* remove the trailing newline char */
+		valptr[strlen(valptr) - 1] = '\0';
+		LOG_D("Reading '%s': key '%s', value '%s'", fname.c_str(), res, valptr);
+		if (found) {
+			break;
+		}
+	}
+
+	if (found) {
+		*ptr = atoll(valptr);
+		LOG_D("Reading '%s' of '%s': %lld", buf, fname.c_str(), *ptr);
+	} else {
+		LOG_E("Couldn't find key '%s' in '%s'", key.c_str(), fname.c_str());
+	}
+
+	fclose(f);
+	return found;
+}
+
 static bool addPidToProcList(const std::string &cgroup_path, pid_t pid) {
 	std::string pid_str = std::to_string(pid);
 
@@ -275,6 +360,29 @@ void finishFromParent(nsjconf_t *nsjconf, pid_t pid) {
 	    nsjconf->cgroup_cpu_ms_per_sec != 0U) {
 		removeCgroup(getCgroupPath(nsjconf, pid));
 	}
+}
+
+void printStat(nsjconf_t *nsjconf, pid_t pid) {
+	if (!needMemoryController(nsjconf)) {
+		return;
+	}
+
+	std::string cgroup_path = getCgroupPath(nsjconf, pid);
+
+	long long int tmp = -1;
+	bool success;
+
+	success = readIntFromCgroup(cgroup_path, "memory.peak", &tmp);
+	if (!success) {
+		tmp = -1;
+	}
+	LOG_STAT("%d:cgroup_memory_max_usage = %lld", pid, tmp);
+
+	success = readKeyedIntFromCgroup(cgroup_path, "memory.events", "max", &tmp);
+	if (!success) {
+		tmp = -1;
+	}
+	LOG_STAT("%d:cgroup_memory_failcnt = %lld", pid, tmp);
 }
 
 }  // namespace cgroup2
