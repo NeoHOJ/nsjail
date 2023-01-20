@@ -437,7 +437,12 @@ int reapProc(nsjconf_t* nsjconf) {
 		if (si.si_pid == 0) {
 			break;
 		}
-		if (si.si_code == CLD_KILLED && si.si_status == SIGSYS) {
+		/* Added CLD_DUMPED to also be considered as a seccomp violation:
+		 * Since Linux 4.11, a single-threaded process will dump core
+		 * if terminated in this way.
+		 */
+		if ((si.si_code == CLD_DUMPED || si.si_code == CLD_KILLED)
+			&& si.si_status == SIGSYS) {
 			seccompViolation(nsjconf, &si);
 			LOG_STAT("%d:seccomp_violation = true", si.si_pid);
 		} else if (nsjconf->seccomp_fprog.filter) {
