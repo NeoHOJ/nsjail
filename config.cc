@@ -24,6 +24,7 @@
 #include <fcntl.h>
 #include <google/protobuf/io/zero_copy_stream_impl.h>
 #include <google/protobuf/text_format.h>
+#include <google/protobuf/util/json_util.h>
 #include <stdio.h>
 #include <sys/mount.h>
 #include <sys/personality.h>
@@ -31,9 +32,8 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
-#include <fstream>
+#include <list>
 #include <string>
-#include <vector>
 
 #include "caps.h"
 #include "cmdline.h"
@@ -46,7 +46,7 @@
 
 namespace config {
 
-static uint64_t configRLimit(
+static uint64_t adjustRLimit(
     int res, const nsjail::RLimit& rl, const uint64_t val, unsigned long mul = 1UL) {
 	if (rl == nsjail::RLimit::VALUE) {
 		return (val * mul);
@@ -64,7 +64,7 @@ static uint64_t configRLimit(
 	abort();
 }
 
-static bool configParseInternal(nsjconf_t* nsjconf, const nsjail::NsJailConfig& njc) {
+static bool parseInternal(nsjconf_t* nsjconf, const nsjail::NsJailConfig& njc) {
 	switch (njc.mode()) {
 	case nsjail::Mode::LISTEN:
 		nsjconf->mode = MODE_LISTEN_TCP;
@@ -147,23 +147,23 @@ static bool configParseInternal(nsjconf_t* nsjconf, const nsjail::NsJailConfig& 
 	nsjconf->disable_no_new_privs = njc.disable_no_new_privs();
 
 	nsjconf->rl_as =
-	    configRLimit(RLIMIT_AS, njc.rlimit_as_type(), njc.rlimit_as(), 1024UL * 1024UL);
+	    adjustRLimit(RLIMIT_AS, njc.rlimit_as_type(), njc.rlimit_as(), 1024UL * 1024UL);
 	nsjconf->rl_core =
-	    configRLimit(RLIMIT_CORE, njc.rlimit_core_type(), njc.rlimit_core(), 1024UL * 1024UL);
-	nsjconf->rl_cpu = configRLimit(RLIMIT_CPU, njc.rlimit_cpu_type(), njc.rlimit_cpu());
-	nsjconf->rl_fsize = configRLimit(
+	    adjustRLimit(RLIMIT_CORE, njc.rlimit_core_type(), njc.rlimit_core(), 1024UL * 1024UL);
+	nsjconf->rl_cpu = adjustRLimit(RLIMIT_CPU, njc.rlimit_cpu_type(), njc.rlimit_cpu());
+	nsjconf->rl_fsize = adjustRLimit(
 	    RLIMIT_FSIZE, njc.rlimit_fsize_type(), njc.rlimit_fsize(), 1024UL * 1024UL);
 	nsjconf->rl_nofile =
-	    configRLimit(RLIMIT_NOFILE, njc.rlimit_nofile_type(), njc.rlimit_nofile());
-	nsjconf->rl_nproc = configRLimit(RLIMIT_NPROC, njc.rlimit_nproc_type(), njc.rlimit_nproc());
-	nsjconf->rl_stack = configRLimit(
+	    adjustRLimit(RLIMIT_NOFILE, njc.rlimit_nofile_type(), njc.rlimit_nofile());
+	nsjconf->rl_nproc = adjustRLimit(RLIMIT_NPROC, njc.rlimit_nproc_type(), njc.rlimit_nproc());
+	nsjconf->rl_stack = adjustRLimit(
 	    RLIMIT_STACK, njc.rlimit_stack_type(), njc.rlimit_stack(), 1024UL * 1024UL);
 	nsjconf->rl_mlock =
-	    configRLimit(RLIMIT_MEMLOCK, njc.rlimit_memlock_type(), njc.rlimit_memlock(), 1024UL);
+	    adjustRLimit(RLIMIT_MEMLOCK, njc.rlimit_memlock_type(), njc.rlimit_memlock(), 1024UL);
 	nsjconf->rl_rtpr =
-	    configRLimit(RLIMIT_RTPRIO, njc.rlimit_rtprio_type(), njc.rlimit_rtprio());
+	    adjustRLimit(RLIMIT_RTPRIO, njc.rlimit_rtprio_type(), njc.rlimit_rtprio());
 	nsjconf->rl_msgq =
-	    configRLimit(RLIMIT_MSGQUEUE, njc.rlimit_msgqueue_type(), njc.rlimit_msgqueue());
+	    adjustRLimit(RLIMIT_MSGQUEUE, njc.rlimit_msgqueue_type(), njc.rlimit_msgqueue());
 
 	nsjconf->disable_rl = njc.disable_rl();
 
@@ -234,8 +234,7 @@ static bool configParseInternal(nsjconf_t* nsjconf, const nsjail::NsJailConfig& 
 
 		if (!mnt::addMountPtTail(nsjconf, src, dst, fstype, options, flags, is_dir,
 			is_mandatory, src_env, dst_env, src_content, is_symlink)) {
-			LOG_E("Couldn't add mountpoint for src:'%s' dst:'%s'", src.c_str(),
-			    dst.c_str());
+			LOG_E("Couldn't add mountpoint for src:%s dst:%s", QC(src), QC(dst));
 			return false;
 		}
 	}
@@ -302,39 +301,73 @@ static bool configParseInternal(nsjconf_t* nsjconf, const nsjail::NsJailConfig& 
 	return true;
 }
 
-static void LogHandler(
+static std::list<std::string> error_messages;
+
+static void logHandler(
     google::protobuf::LogLevel level, const char* filename, int line, const std::string& message) {
-	LOG_W("config.cc: '%s'", message.c_str());
+	error_messages.push_back(message);
+}
+
+static void flushLog() {
+	for (auto message : error_messages) {
+		LOG_W("ProtoTextFormat: %s", message.c_str());
+	}
+	error_messages.clear();
 }
 
 bool parseFile(nsjconf_t* nsjconf, const char* file) {
-	LOG_D("Parsing configuration from '%s'", file);
+	LOG_D("Parsing configuration from %s", QC(file));
 
-	int fd = TEMP_FAILURE_RETRY(open(file, O_RDONLY | O_CLOEXEC));
-	if (fd == -1) {
-		PLOG_W("Couldn't open config file '%s'", file);
+	std::string conf;
+	if (!util::readFromFileToStr(file, &conf)) {
+		LOG_E("Couldn't read config file %s", QC(file));
 		return false;
 	}
-
-	SetLogHandler(LogHandler);
-	google::protobuf::io::FileInputStream input(fd);
-	input.SetCloseOnDelete(true);
+	if (conf.empty()) {
+		LOG_E("Config file %s is empty", QC(file));
+		return false;
+	}
 
 	/* Use static so we can get c_str() pointers, and copy them into the nsjconf struct */
-	static nsjail::NsJailConfig nsc;
+	static nsjail::NsJailConfig json_nsc;
+	static nsjail::NsJailConfig text_nsc;
 
-	auto parser = google::protobuf::TextFormat::Parser();
-	if (!parser.Parse(&input, &nsc)) {
-		LOG_W("Couldn't parse file '%s' from Text into ProtoBuf", file);
+	google::protobuf::SetLogHandler(logHandler);
+	auto json_status = google::protobuf::util::JsonStringToMessage(conf, &json_nsc);
+	bool text_parsed = google::protobuf::TextFormat::ParseFromString(conf, &text_nsc);
+
+	if (json_status.ok() && text_parsed) {
+		LOG_W("Config file %s ambiguously parsed as TextProto and ProtoJSON", QC(file));
 		return false;
 	}
-	if (!configParseInternal(nsjconf, nsc)) {
-		LOG_W("Couldn't parse the ProtoBuf from '%s'", file);
+
+	if (!json_status.ok() && !text_parsed) {
+		LOG_E("Config file %s failed to parse as either TextProto or ProtoJSON", QC(file));
+		flushLog();
+		LOG_W("ProtoJSON parse status: '%s'", json_status.ToString().c_str());
 		return false;
 	}
 
-	LOG_D("Parsed config from '%s':\n'%s'", file, nsc.DebugString().c_str());
-	return true;
+	if (json_status.ok() && !text_parsed) {
+		if (!parseInternal(nsjconf, json_nsc)) {
+			LOG_W("Couldn't parse the ProtoJSON from %s", QC(file));
+			return false;
+		}
+		LOG_D(
+		    "Parsed JSON config from %s:\n'%s'", QC(file), json_nsc.DebugString().c_str());
+		return true;
+	}
+
+	if (text_parsed && !json_status.ok()) {
+		if (!parseInternal(nsjconf, text_nsc)) {
+			LOG_W("Couldn't parse the TextProto from %s", QC(file));
+			return false;
+		}
+		LOG_D("Parsed TextProto config from %s:\n'%s'", QC(file),
+		    text_nsc.DebugString().c_str());
+		return true;
+	}
+	return false;
 }
 
 }  // namespace config

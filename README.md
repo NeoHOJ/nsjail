@@ -537,7 +537,7 @@ The command-line options should be self-explanatory, while the proto-buf config 
   --disable_tsc 
  	Disable rdtsc and rdtscp instructions. WARNING: To make it effective, you also need to forbid `prctl(PR_SET_TSC, PR_TSC_ENABLE, ...)` in seccomp rules! (x86 and x86_64 only). Dynamic binaries produced by GCC seem to rely on RDTSC, but static ones should work.
   --forward_signals 
- 	Forward fatal signals to the child process instead of always using SIKGILL.
+ 	Forward fatal signals to the child process instead of always using SIGKILL.
  
  Examples: 
   Wait on a port 31337 for connections, and run /bin/sh
@@ -558,7 +558,7 @@ To launch nsjail in a docker container clone the repository and build the docker
 docker build -t nsjailcontainer .
 </pre>
 
-This will build up an image containing njsail and kafel.
+This will build up an image containing nsjail and kafel.
 
 From now you can either use it in another Dockerfile (`FROM nsjailcontainer`) or directly:
 <pre>

@@ -60,35 +60,35 @@ static const std::string flagsToStr(unsigned long flags) {
 		const unsigned long flag;
 		const char* const name;
 	} static const mountFlags[] = {
-		NS_VALSTR_STRUCT(MS_RDONLY),
-		NS_VALSTR_STRUCT(MS_NOSUID),
-		NS_VALSTR_STRUCT(MS_NODEV),
-		NS_VALSTR_STRUCT(MS_NOEXEC),
-		NS_VALSTR_STRUCT(MS_SYNCHRONOUS),
-		NS_VALSTR_STRUCT(MS_REMOUNT),
-		NS_VALSTR_STRUCT(MS_MANDLOCK),
-		NS_VALSTR_STRUCT(MS_DIRSYNC),
-		NS_VALSTR_STRUCT(MS_NOATIME),
-		NS_VALSTR_STRUCT(MS_NODIRATIME),
-		NS_VALSTR_STRUCT(MS_BIND),
-		NS_VALSTR_STRUCT(MS_MOVE),
-		NS_VALSTR_STRUCT(MS_REC),
-		NS_VALSTR_STRUCT(MS_SILENT),
-		NS_VALSTR_STRUCT(MS_POSIXACL),
-		NS_VALSTR_STRUCT(MS_UNBINDABLE),
-		NS_VALSTR_STRUCT(MS_PRIVATE),
-		NS_VALSTR_STRUCT(MS_SLAVE),
-		NS_VALSTR_STRUCT(MS_SHARED),
-		NS_VALSTR_STRUCT(MS_RELATIME),
-		NS_VALSTR_STRUCT(MS_KERNMOUNT),
-		NS_VALSTR_STRUCT(MS_I_VERSION),
-		NS_VALSTR_STRUCT(MS_STRICTATIME),
-		NS_VALSTR_STRUCT(MS_LAZYTIME),
+	    NS_VALSTR_STRUCT(MS_RDONLY),
+	    NS_VALSTR_STRUCT(MS_NOSUID),
+	    NS_VALSTR_STRUCT(MS_NODEV),
+	    NS_VALSTR_STRUCT(MS_NOEXEC),
+	    NS_VALSTR_STRUCT(MS_SYNCHRONOUS),
+	    NS_VALSTR_STRUCT(MS_REMOUNT),
+	    NS_VALSTR_STRUCT(MS_MANDLOCK),
+	    NS_VALSTR_STRUCT(MS_DIRSYNC),
+	    NS_VALSTR_STRUCT(MS_NOATIME),
+	    NS_VALSTR_STRUCT(MS_NODIRATIME),
+	    NS_VALSTR_STRUCT(MS_BIND),
+	    NS_VALSTR_STRUCT(MS_MOVE),
+	    NS_VALSTR_STRUCT(MS_REC),
+	    NS_VALSTR_STRUCT(MS_SILENT),
+	    NS_VALSTR_STRUCT(MS_POSIXACL),
+	    NS_VALSTR_STRUCT(MS_UNBINDABLE),
+	    NS_VALSTR_STRUCT(MS_PRIVATE),
+	    NS_VALSTR_STRUCT(MS_SLAVE),
+	    NS_VALSTR_STRUCT(MS_SHARED),
+	    NS_VALSTR_STRUCT(MS_RELATIME),
+	    NS_VALSTR_STRUCT(MS_KERNMOUNT),
+	    NS_VALSTR_STRUCT(MS_I_VERSION),
+	    NS_VALSTR_STRUCT(MS_STRICTATIME),
+	    NS_VALSTR_STRUCT(MS_LAZYTIME),
 #if defined(MS_ACTIVE)
-		NS_VALSTR_STRUCT(MS_ACTIVE),
+	    NS_VALSTR_STRUCT(MS_ACTIVE),
 #endif /* defined(MS_ACTIVE) */
 #if defined(MS_NOUSER)
-		NS_VALSTR_STRUCT(MS_NOUSER),
+	    NS_VALSTR_STRUCT(MS_NOUSER),
 #endif /* defined(MS_NOUSER) */
 	};
 
@@ -114,18 +114,30 @@ static bool isDir(const char* path) {
 	/*
 	 *  If the source dir is NULL, we assume it's a dir (for /proc and tmpfs)
 	 */
-	if (path == NULL) {
+	if (path == nullptr) {
 		return true;
 	}
 	struct stat st;
 	if (stat(path, &st) == -1) {
-		PLOG_D("stat('%s')", path);
+		PLOG_D("stat(%s)", QC(path));
 		return false;
 	}
 	if (S_ISDIR(st.st_mode)) {
 		return true;
 	}
 	return false;
+}
+
+static int mountRWIfPossible(mount_t* mpt, const char* src, const char* dst) {
+	int res =
+	    mount(src, dst, mpt->fs_type.c_str(), mpt->flags & ~(MS_RDONLY), mpt->options.c_str());
+	if ((mpt->flags & MS_RDONLY) && res == -1 && errno == EPERM) {
+		LOG_W("mount(%s) src:%s dstpath:%s could not mount read-write, falling "
+		      "back to mounting read-only directly",
+		    describeMountPt(*mpt).c_str(), QC(src), QC(dst));
+		res = mount(src, dst, mpt->fs_type.c_str(), mpt->flags, mpt->options.c_str());
+	}
+	return res;
 }
 
 static bool mountPt(mount_t* mpt, const char* newroot, const char* tmpdir) {
@@ -199,22 +211,19 @@ static bool mountPt(mount_t* mpt, const char* newroot, const char* tmpdir) {
 	/*
 	 * Initially mount it as RW, it will be remounted later on if needed
 	 */
-	unsigned long flags = mpt->flags & ~(MS_RDONLY);
-	if (mount(srcpath, dstpath, mpt->fs_type.c_str(), flags, mpt->options.c_str()) == -1) {
+	if (mountRWIfPossible(mpt, srcpath, dstpath) == -1) {
 		if (errno == EACCES) {
-			PLOG_W(
-			    "mount('%s') src:'%s' dstpath:'%s' failed. "
-			    "Try fixing this problem by applying 'chmod o+x' to the '%s' "
-			    "directory and its ancestors",
+			PLOG_W("mount('%s') src:'%s' dstpath:'%s' failed. "
+			       "Try fixing this problem by applying 'chmod o+x' to the '%s' "
+			       "directory and its ancestors",
 			    describeMountPt(*mpt).c_str(), srcpath, dstpath, srcpath);
 		} else {
 			PLOG_W("mount('%s') src:'%s' dstpath:'%s' failed",
 			    describeMountPt(*mpt).c_str(), srcpath, dstpath);
 			if (mpt->fs_type.compare("proc") == 0) {
-				PLOG_W(
-				    "procfs can only be mounted if the original /proc doesn't have "
-				    "any other file-systems mounted on top of it (e.g. /dev/null "
-				    "on top of /proc/kcore)");
+				PLOG_W("procfs can only be mounted if the original /proc doesn't "
+				       "have any other file-systems mounted on top of it (e.g. "
+				       "/dev/null on top of /proc/kcore)");
 			}
 		}
 		return false;
@@ -355,7 +364,7 @@ static bool initNoCloneNs(nsjconf_t* nsjconf) {
 		return true;
 	}
 	if (chroot(nsjconf->chroot.c_str()) == -1) {
-		PLOG_E("chroot('%s')", QC(nsjconf->chroot));
+		PLOG_E("chroot(%s)", QC(nsjconf->chroot));
 		return false;
 	}
 	if (chdir("/") == -1) {
@@ -383,7 +392,7 @@ static bool initCloneNs(nsjconf_t* nsjconf) {
 		return false;
 	}
 	if (mount(NULL, destdir->c_str(), "tmpfs", 0, "size=16777216") == -1) {
-		PLOG_E("mount('%s', 'tmpfs')", QC(*destdir));
+		PLOG_E("mount(%s, 'tmpfs')", QC(*destdir));
 		return false;
 	}
 
@@ -445,9 +454,8 @@ static bool initCloneNs(nsjconf_t* nsjconf) {
 		 * proper capabilities are kept in the user namespace. It can be acheived by
 		 * unmounting the new root and using setns to re-enter the mount namespace.
 		 */
-		LOG_W(
-		    "Using no_pivotroot is escapable when user posseses relevant capabilities, "
-		    "Use it with care!");
+		LOG_W("Using no_pivotroot is escapable when user posseses relevant capabilities, "
+		      "Use it with care!");
 
 		if (chdir(destdir->c_str()) == -1) {
 			PLOG_E("chdir(%s)", QC(*destdir));
@@ -513,8 +521,7 @@ bool initNs(nsjconf_t* nsjconf) {
 	}
 
 	int status;
-	while (wait4(pid, &status, 0, NULL) != pid)
-		;
+	while (wait4(pid, &status, 0, NULL) != pid);
 	if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
 		return true;
 	}
@@ -527,7 +534,7 @@ static bool addMountPt(mount_t* mnt, const std::string& src, const std::string& 
     const std::string& src_content, bool is_symlink) {
 	if (!src_env.empty()) {
 		const char* e = getenv(src_env.c_str());
-		if (e == NULL) {
+		if (e == nullptr) {
 			LOG_W("No such envar:%s", QC(src_env));
 			return false;
 		}
@@ -537,7 +544,7 @@ static bool addMountPt(mount_t* mnt, const std::string& src, const std::string& 
 
 	if (!dst_env.empty()) {
 		const char* e = getenv(dst_env.c_str());
-		if (e == NULL) {
+		if (e == nullptr) {
 			LOG_W("No such envar:%s", QC(dst_env));
 			return false;
 		}

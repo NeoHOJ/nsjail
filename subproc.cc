@@ -73,34 +73,42 @@ static const std::string cloneFlagsToStr(uint64_t flags) {
 		const uint64_t flag;
 		const char* const name;
 	} static const cloneFlags[] = {
-		NS_VALSTR_STRUCT(CLONE_NEWTIME),
-		NS_VALSTR_STRUCT(CLONE_VM),
-		NS_VALSTR_STRUCT(CLONE_FS),
-		NS_VALSTR_STRUCT(CLONE_FILES),
-		NS_VALSTR_STRUCT(CLONE_SIGHAND),
+	    NS_VALSTR_STRUCT(CLONE_NEWTIME),
+	    NS_VALSTR_STRUCT(CLONE_VM),
+	    NS_VALSTR_STRUCT(CLONE_FS),
+	    NS_VALSTR_STRUCT(CLONE_FILES),
+	    NS_VALSTR_STRUCT(CLONE_SIGHAND),
 #if !defined(CLONE_PIDFD)
 #define CLONE_PIDFD 0x00001000
 #endif
-		NS_VALSTR_STRUCT(CLONE_PIDFD),
-		NS_VALSTR_STRUCT(CLONE_PTRACE),
-		NS_VALSTR_STRUCT(CLONE_VFORK),
-		NS_VALSTR_STRUCT(CLONE_PARENT),
-		NS_VALSTR_STRUCT(CLONE_THREAD),
-		NS_VALSTR_STRUCT(CLONE_NEWNS),
-		NS_VALSTR_STRUCT(CLONE_SYSVSEM),
-		NS_VALSTR_STRUCT(CLONE_SETTLS),
-		NS_VALSTR_STRUCT(CLONE_PARENT_SETTID),
-		NS_VALSTR_STRUCT(CLONE_CHILD_CLEARTID),
-		NS_VALSTR_STRUCT(CLONE_DETACHED),
-		NS_VALSTR_STRUCT(CLONE_UNTRACED),
-		NS_VALSTR_STRUCT(CLONE_CHILD_SETTID),
-		NS_VALSTR_STRUCT(CLONE_NEWCGROUP),
-		NS_VALSTR_STRUCT(CLONE_NEWUTS),
-		NS_VALSTR_STRUCT(CLONE_NEWIPC),
-		NS_VALSTR_STRUCT(CLONE_NEWUSER),
-		NS_VALSTR_STRUCT(CLONE_NEWPID),
-		NS_VALSTR_STRUCT(CLONE_NEWNET),
-		NS_VALSTR_STRUCT(CLONE_IO),
+	    NS_VALSTR_STRUCT(CLONE_PIDFD),
+	    NS_VALSTR_STRUCT(CLONE_PTRACE),
+	    NS_VALSTR_STRUCT(CLONE_VFORK),
+	    NS_VALSTR_STRUCT(CLONE_PARENT),
+	    NS_VALSTR_STRUCT(CLONE_THREAD),
+	    NS_VALSTR_STRUCT(CLONE_NEWNS),
+	    NS_VALSTR_STRUCT(CLONE_SYSVSEM),
+	    NS_VALSTR_STRUCT(CLONE_SETTLS),
+	    NS_VALSTR_STRUCT(CLONE_PARENT_SETTID),
+	    NS_VALSTR_STRUCT(CLONE_CHILD_CLEARTID),
+	    NS_VALSTR_STRUCT(CLONE_DETACHED),
+	    NS_VALSTR_STRUCT(CLONE_UNTRACED),
+	    NS_VALSTR_STRUCT(CLONE_CHILD_SETTID),
+	    NS_VALSTR_STRUCT(CLONE_NEWCGROUP),
+	    NS_VALSTR_STRUCT(CLONE_NEWUTS),
+	    NS_VALSTR_STRUCT(CLONE_NEWIPC),
+	    NS_VALSTR_STRUCT(CLONE_NEWUSER),
+	    NS_VALSTR_STRUCT(CLONE_NEWPID),
+	    NS_VALSTR_STRUCT(CLONE_NEWNET),
+	    NS_VALSTR_STRUCT(CLONE_IO),
+#if !defined(CLONE_CLEAR_SIGHAND)
+#define CLONE_CLEAR_SIGHAND 0x100000000ULL
+#endif /* !defined(CLONE_CLEAR_SIGHAND) */
+	    NS_VALSTR_STRUCT(CLONE_CLEAR_SIGHAND),
+#if !defined(CLONE_INTO_CGROUP)
+#define CLONE_INTO_CGROUP 0x200000000ULL
+#endif /* !defined(CLONE_INTO_CGROUP) */
+	    NS_VALSTR_STRUCT(CLONE_INTO_CGROUP),
 	};
 
 	uint64_t knownFlagMask = 0;
@@ -220,7 +228,7 @@ static void newProc(nsjconf_t* nsjconf, int netfd, int fd_in, int fd_out, int fd
 	}
 
 	auto connstr = net::connToText(netfd, /* remote= */ true, NULL);
-	LOG_I("Executing %s for '%s'", util::StrQuote(nsjconf->exec_file).c_str(), connstr.c_str());
+	LOG_I("Executing %s for '%s'", QC(nsjconf->exec_file), connstr.c_str());
 
 	std::vector<const char*> argv;
 	for (const auto& s : nsjconf->argv) {
@@ -237,8 +245,7 @@ static void newProc(nsjconf_t* nsjconf, int netfd, int fd_in, int fd_out, int fd
 		LOG_I("Continued from stopped state");
 	}
 
-	LOG_D("Exec: %s, Args: [%s]", util::StrQuote(nsjconf->exec_file).c_str(),
-	    concatArgs(argv).c_str());
+	LOG_D("Exec: %s, Args: [%s]", QC(nsjconf->exec_file), concatArgs(argv).c_str());
 
 	/* Should be the last one in the sequence */
 	if (!sandbox::applyPolicy(nsjconf)) {
@@ -247,7 +254,7 @@ static void newProc(nsjconf_t* nsjconf, int netfd, int fd_in, int fd_out, int fd
 
 	if (nsjconf->use_execveat) {
 #if defined(__NR_execveat)
-		util::syscall(__NR_execveat, nsjconf->exec_fd, (uintptr_t) "",
+		util::syscall(__NR_execveat, nsjconf->exec_fd, (uintptr_t)"",
 		    (uintptr_t)argv.data(), (uintptr_t)environ, AT_EMPTY_PATH);
 #else  /* defined(__NR_execveat) */
 		LOG_E("Your system doesn't support execveat() syscall");
@@ -257,7 +264,7 @@ static void newProc(nsjconf_t* nsjconf, int netfd, int fd_in, int fd_out, int fd
 		execv(nsjconf->exec_file.c_str(), (char* const*)argv.data());
 	}
 
-	PLOG_E("execve('%s') failed", nsjconf->exec_file.c_str());
+	PLOG_E("execve(%s) failed", QC(nsjconf->exec_file));
 }
 
 static void addProc(nsjconf_t* nsjconf, pid_t pid, int sock) {
@@ -314,10 +321,9 @@ static void seccompViolation(nsjconf_t* nsjconf, siginfo_t* si) {
 
 	const auto& p = nsjconf->pids.find(si->si_pid);
 	if (p == nsjconf->pids.end()) {
-		LOG_W(
-		    "pid=%d SiStatus:%d SiUid:%d SiUtime:%ld SiStime:%ld (If "
-		    "SiStatus==31 (SIGSYS), then see 'dmesg' or 'journalctl -ek' for possible "
-		    "auditd report with more data)",
+		LOG_W("pid=%d SiStatus:%d SiUid:%d SiUtime:%ld SiStime:%ld (If "
+		      "SiStatus==31 (SIGSYS), then see 'dmesg' or 'journalctl -ek' for possible "
+		      "auditd report with more data)",
 		    (int)si->si_pid, si->si_status, si->si_uid, (long)si->si_utime,
 		    (long)si->si_stime);
 		LOG_E("Couldn't find pid element in the subproc list for pid=%d", (int)si->si_pid);
@@ -327,10 +333,9 @@ static void seccompViolation(nsjconf_t* nsjconf, siginfo_t* si) {
 	char buf[4096];
 	ssize_t rdsize = util::readFromFd(p->second.pid_syscall_fd, buf, sizeof(buf) - 1);
 	if (rdsize < 1) {
-		LOG_W(
-		    "pid=%d SiStatus:%d SiUid:%d SiUtime:%ld SiStime:%ld (If "
-		    "SiStatus==31 (SIGSYS), then see 'dmesg' or 'journalctl -ek' for possible "
-		    "auditd report with more data)",
+		LOG_W("pid=%d SiStatus:%d SiUid:%d SiUtime:%ld SiStime:%ld (If "
+		      "SiStatus==31 (SIGSYS), then see 'dmesg' or 'journalctl -ek' for possible "
+		      "auditd report with more data)",
 		    (int)si->si_pid, si->si_status, si->si_uid, (long)si->si_utime,
 		    (long)si->si_stime);
 		return;
@@ -342,23 +347,20 @@ static void seccompViolation(nsjconf_t* nsjconf, siginfo_t* si) {
 	int ret = sscanf(buf, "%td %tx %tx %tx %tx %tx %tx %tx %tx", &sc, &arg1, &arg2, &arg3,
 	    &arg4, &arg5, &arg6, &sp, &pc);
 	if (ret == 9) {
-		LOG_W(
-		    "pid=%d, Syscall number:%td, Arguments:%#tx, %#tx, %#tx, %#tx, %#tx, %#tx, "
-		    "SP:%#tx, PC:%#tx, si_status:%d",
+		LOG_W("pid=%d, Syscall number:%td, Arguments:%#tx, %#tx, %#tx, %#tx, %#tx, %#tx, "
+		      "SP:%#tx, PC:%#tx, si_status:%d",
 		    (int)si->si_pid, sc, arg1, arg2, arg3, arg4, arg5, arg6, sp, pc, si->si_status);
 	} else if (ret == 3) {
-		LOG_W(
-		    "pid=%d SiStatus:%d SiUid:%d SiUtime:%ld SiStime:%ld SP:%#tx, PC:%#tx (If "
-		    "SiStatus==31 (SIGSYS), then see 'dmesg' or 'journalctl -ek' for possible "
-		    "auditd report with more data)",
+		LOG_W("pid=%d SiStatus:%d SiUid:%d SiUtime:%ld SiStime:%ld SP:%#tx, PC:%#tx (If "
+		      "SiStatus==31 (SIGSYS), then see 'dmesg' or 'journalctl -ek' for possible "
+		      "auditd report with more data)",
 		    (int)si->si_pid, si->si_status, si->si_uid, (long)si->si_utime,
 		    (long)si->si_stime, arg1, arg2);
 		return;
 	} else {
-		LOG_W(
-		    "pid=%d SiStatus:%d SiUid:%d SiUtime:%ld SiStime:%ld (If "
-		    "SiStatus==31 (SIGSYS), then see 'dmesg' or 'journalctl -ek' for possible "
-		    "auditd report with more data)",
+		LOG_W("pid=%d SiStatus:%d SiUid:%d SiUtime:%ld SiStime:%ld (If "
+		      "SiStatus==31 (SIGSYS), then see 'dmesg' or 'journalctl -ek' for possible "
+		      "auditd report with more data)",
 		    (int)si->si_pid, si->si_status, si->si_uid, (long)si->si_utime,
 		    (long)si->si_stime);
 	}
@@ -677,9 +679,9 @@ static uint8_t cloneStack[128 * 1024] __attribute__((aligned(__BIGGEST_ALIGNMENT
 /* Cannot be on the stack, as the child's stack pointer will change after clone() */
 static __thread jmp_buf env;
 
-static int cloneFunc(void* arg __attribute__((unused))) {
+[[noreturn]] static int cloneFunc([[maybe_unused]] void* arg) {
 	longjmp(env, 1);
-	return 0;
+	LOG_F("Execution past longjmp");
 }
 
 /*
@@ -697,17 +699,26 @@ pid_t cloneProc(uint64_t flags, int exit_signal) {
 	}
 
 	if (flags & CLONE_NEWTIME) {
-		LOG_W(
-		    "CLONE_NEWTIME reuqested, but it's only supported with the unshare() mode "
-		    "(-Me)");
+		LOG_W("CLONE_NEWTIME reuqested, but it's only supported with the unshare() mode "
+		      "(-Me)");
 	}
 
 #if defined(__NR_clone3)
 	struct clone_args ca = {};
-	ca.flags = flags;
 	ca.exit_signal = (uint64_t)exit_signal;
 
+	ca.flags = flags | CLONE_CLEAR_SIGHAND;
 	pid_t ret = util::syscall(__NR_clone3, (uintptr_t)&ca, sizeof(ca));
+	if (ret != -1) {
+		return ret;
+	}
+
+	/*
+	 * Now try without CLONE_CLEAR_SIGHAND as it's supported since Linux 5.5, while clone3
+	 * appeared in Linux 5.3
+	 */
+	ca.flags = flags;
+	ret = util::syscall(__NR_clone3, (uintptr_t)&ca, sizeof(ca));
 	if (ret != -1 || errno != ENOSYS) {
 		return ret;
 	}

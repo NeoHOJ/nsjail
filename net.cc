@@ -57,7 +57,7 @@ namespace net {
 static bool cloneIface(
     nsjconf_t* nsjconf, struct nl_sock* sk, struct nl_cache* link_cache, int pid) {
 	struct rtnl_link* rmv = rtnl_link_macvlan_alloc();
-	if (rmv == NULL) {
+	if (rmv == nullptr) {
 		LOG_E("rtnl_link_macvlan_alloc()");
 		return false;
 	}
@@ -198,7 +198,7 @@ bool limitConns(nsjconf_t* nsjconf, int connsock) {
 		return true;
 	}
 
-	struct sockaddr_in6 addr;
+	struct sockaddr_in6 addr = {};
 	auto connstr = connToText(connsock, true /* remote */, &addr);
 
 	unsigned cnt = 0;
@@ -219,9 +219,8 @@ bool limitConns(nsjconf_t* nsjconf, int connsock) {
 
 int getRecvSocket(const char* bindhost, int port) {
 	if (port < 0 || port > 65535) {
-		LOG_F(
-		    "TCP port %d out of bounds (0 <= port <= 65535), specify one with --port "
-		    "<port>",
+		LOG_F("TCP port %d out of bounds (0 <= port <= 65535), specify one with --port "
+		      "<port>",
 		    port);
 	}
 
@@ -272,14 +271,14 @@ int getRecvSocket(const char* bindhost, int port) {
 		return -1;
 	}
 
-	auto connstr = connToText(sockfd, false /* remote */, NULL);
+	auto connstr = connToText(sockfd, false /* remote */, nullptr);
 	LOG_I("Listening on %s", connstr.c_str());
 
 	return sockfd;
 }
 
 int acceptConn(int listenfd) {
-	struct sockaddr_in6 cli_addr;
+	struct sockaddr_in6 cli_addr = {};
 	socklen_t socklen = sizeof(cli_addr);
 	int connfd = accept4(listenfd, (struct sockaddr*)&cli_addr, &socklen, SOCK_NONBLOCK);
 	if (connfd == -1) {
@@ -289,8 +288,8 @@ int acceptConn(int listenfd) {
 		return -1;
 	}
 
-	auto connremotestr = connToText(connfd, true /* remote */, NULL);
-	auto connlocalstr = connToText(connfd, false /* remote */, NULL);
+	auto connremotestr = connToText(connfd, true /* remote */, nullptr);
+	auto connlocalstr = connToText(connfd, false /* remote */, nullptr);
 	LOG_I("New connection from: %s on: %s", connremotestr.c_str(), connlocalstr.c_str());
 
 	return connfd;
@@ -341,8 +340,7 @@ static bool ifaceUp(const char* ifacename) {
 		return false;
 	}
 
-	struct ifreq ifr;
-	memset(&ifr, '\0', sizeof(ifr));
+	struct ifreq ifr = {};
 	snprintf(ifr.ifr_name, IF_NAMESIZE, "%s", ifacename);
 
 	if (ioctl(sock, SIOCGIFFLAGS, &ifr) == -1) {
@@ -383,8 +381,7 @@ static bool ifaceConfig(const std::string& iface, const std::string& ip, const s
 		return true;
 	}
 
-	struct ifreq ifr;
-	memset(&ifr, '\0', sizeof(ifr));
+	struct ifreq ifr = {};
 	snprintf(ifr.ifr_name, IF_NAMESIZE, "%s", iface.c_str());
 	struct sockaddr_in* sa = (struct sockaddr_in*)(&ifr.ifr_addr);
 	sa->sin_family = AF_INET;
@@ -424,8 +421,7 @@ static bool ifaceConfig(const std::string& iface, const std::string& ip, const s
 		return true;
 	}
 
-	struct rtentry rt;
-	memset(&rt, '\0', sizeof(rt));
+	struct rtentry rt = {};
 	struct sockaddr_in* sdest = (struct sockaddr_in*)(&rt.rt_dst);
 	struct sockaddr_in* smask = (struct sockaddr_in*)(&rt.rt_genmask);
 	struct sockaddr_in* sgate = (struct sockaddr_in*)(&rt.rt_gateway);

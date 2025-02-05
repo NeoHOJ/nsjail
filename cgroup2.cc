@@ -41,7 +41,17 @@
 
 namespace cgroup2 {
 
-static bool addPidToProcList(const std::string &cgroup_path, pid_t pid);
+static bool addPidToProcList(const std::string &cgroup_path, pid_t pid) {
+	std::string pid_str = std::to_string(pid);
+
+	LOG_D("Adding pid='%s' to cgroup.procs", pid_str.c_str());
+	if (!util::writeBufToFile((cgroup_path + "/cgroup.procs").c_str(), pid_str.c_str(),
+		pid_str.length(), O_WRONLY)) {
+		LOG_W("Could not update cgroup.procs");
+		return false;
+	}
+	return true;
+}
 
 static std::string getCgroupPath(nsjconf_t *nsjconf, pid_t pid) {
 	return nsjconf->cgroupv2_mount + "/NSJAIL." + std::to_string(pid);
@@ -93,8 +103,11 @@ static bool enableCgroupSubtree(nsjconf_t *nsjconf, const std::string &controlle
 		}
 	}
 	LOG_E(
-	    "Could not apply '%s' to cgroup.subtree_control in '%s'. If you are running in Docker, "
-	    "nsjail MUST be the root process to use cgroups.",
+	    "Could not apply '%s' to cgroup.subtree_control in '%s'. nsjail MUST be run from root "
+	    "and the cgroup mount path must refer to the root/host cgroup to use cgroupv2. If you "
+	    "use Docker, you may need to run the container with --cgroupns=host so that nsjail can"
+	    " access the host/root cgroupv2 hierarchy. An alternative is mounting (or remounting) "
+	    "the cgroupv2 filesystem but using the flag is just simpler.",
 	    val.c_str(), cgroup_path.c_str());
 	return false;
 }
@@ -194,18 +207,6 @@ static bool readKeyedIntFromCgroup(const std::string &cgroup_path, const std::st
 
 	fclose(f);
 	return found;
-}
-
-static bool addPidToProcList(const std::string &cgroup_path, pid_t pid) {
-	std::string pid_str = std::to_string(pid);
-
-	LOG_D("Adding pid='%s' to cgroup.procs", pid_str.c_str());
-	if (!util::writeBufToFile((cgroup_path + "/cgroup.procs").c_str(), pid_str.c_str(),
-		pid_str.length(), O_WRONLY)) {
-		LOG_W("Could not update cgroup.procs");
-		return false;
-	}
-	return true;
 }
 
 static void removeCgroup(const std::string &cgroup_path) {

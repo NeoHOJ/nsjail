@@ -1,0 +1,14 @@
+BasedOnStyle: Google
+ColumnLimit: 100
+IndentWidth: 8
+UseTab: Always
+---
+Language: Cpp
+AlignAfterOpenBracket: DontAlign
+AlignEscapedNewlines: Right
+AlignOperands: true
+AllowShortFunctionsOnASingleLine: false
+AlwaysBreakBeforeMultilineStrings: false
+IndentCaseLabels: false
+---
+Language: Proto
